@@ -42,5 +42,27 @@
     "rule32_recommendation": null,
     "pdf_report": "reports/Purdue_vs_Michigan_March_15,_2026.pdf",
     "result": "PENDING"
+  },
+  {
+    "date": "March 15, 2026",
+    "game": "Purdue vs Michigan",
+    "sport": "NCAAMB",
+    "context": "NCAA Tournament",
+    "spread_pick": null,
+    "spread_line": null,
+    "spread_confidence": null,
+    "spread_recommendation": null,
+    "total_pick": null,
+    "total_line": null,
+    "total_confidence": null,
+    "best_bet": null,
+    "best_bet_confidence": null,
+    "predicted_score": null,
+    "rule20_active": null,
+    "rule31_active": null,
+    "rule32_gap": null,
+    "rule32_recommendation": null,
+    "pdf_report": "reports/Purdue_vs_Michigan_March_15,_2026.pdf",
+    "result": "PENDING"
   }
 ]
