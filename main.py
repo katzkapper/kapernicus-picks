@@ -308,7 +308,7 @@ BEST BET of the game (pick ONE):
 
 ═══════════════════════════════════════════
 STEP 6 — MANDATORY MODEL RULES (32 Total)
-═══════════════════════════════════════════
+══a��════════════════════════════════════════
 These rules override all other assumptions.
 Rules 1-7: original. Rules 8-13: post-mortem v1. Rules 14-16: post-mortem v2. Rules 17-22: post-mortem v3. Rules 23-26: post-mortem v4. Rules 27-30: post-mortem v5 (Hawaii 71, UCI 64 — Big West Championship 2026). Rule 31: post-mortem v6 (Penn 88, Yale 84 OT — Ivy League Championship 2026). Rule 32: structural bias correction v7 (favorite overpricing and underdog cover value identification).
 
@@ -564,6 +564,7 @@ IMPORTANT REMINDERS (v7)
 
 """
 
+
 def check_setup():
     """Verify everything is configured before running"""
     errors = []
@@ -572,48 +573,50 @@ def check_setup():
     if "PASTE YOUR COMPLETE" in FULL_MODEL_PROMPT:
         errors.append("32-rule prompt not pasted into main.py")
     if errors:
-        print("\n" + "="*50)
+        print("\n" + "=" * 50)
         print("SETUP ERRORS — fix these before running:")
         for e in errors:
             print(f"  • {e}")
-        print("="*50 + "\n")
+        print("=" * 50 + "\n")
         return False
     return True
 
+
 def get_game_input():
     """Collect game details from the user"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("   SPORTS BETTING ANALYZER — 32-RULE MODEL v7")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
-    team1   = input("Away Team (e.g. Duke): ").strip()
-    team2   = input("Home Team (e.g. North Carolina): ").strip()
+    team1 = input("Away Team (e.g. Duke): ").strip()
+    team2 = input("Home Team (e.g. North Carolina): ").strip()
     print("Sport options: NBA  NCAAMB  NFL  NHL  MLB")
-    sport   = input("Sport [NCAAMB]: ").strip().upper() or "NCAAMB"
-    date    = input("Game Date (e.g. March 20, 2026): ").strip()
+    sport = input("Sport [NCAAMB]: ").strip().upper() or "NCAAMB"
+    date = input("Game Date (e.g. March 20, 2026): ").strip()
     context = input("Context (e.g. Regular Season / NCAA Tournament): ").strip()
 
     return team1, team2, sport, date, context
 
+
 def display_summary(picks):
     """Print picks summary to the console"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("   PICKS SUMMARY")
-    print("="*60)
+    print("=" * 60)
 
-    sr = picks.get("spread_recommendation","—")
-    sp = picks.get("spread_pick","—")
-    sl = picks.get("spread_line","—")
-    sc = picks.get("spread_confidence","—")
+    sr = picks.get("spread_recommendation", "—")
+    sp = picks.get("spread_pick", "—")
+    sl = picks.get("spread_line", "—")
+    sc = picks.get("spread_confidence", "—")
 
-    tr = picks.get("total_recommendation","—")
-    tp = picks.get("total_pick","—")
-    tl = picks.get("total_line","—")
-    tc = picks.get("total_confidence","—")
+    tr = picks.get("total_recommendation", "—")
+    tp = picks.get("total_pick", "—")
+    tl = picks.get("total_line", "—")
+    tc = picks.get("total_confidence", "—")
 
-    bb = picks.get("best_bet","—")
-    bc = picks.get("best_bet_confidence","—")
-    ps = picks.get("predicted_score","—")
+    bb = picks.get("best_bet", "—")
+    bc = picks.get("best_bet_confidence", "—")
+    ps = picks.get("predicted_score", "—")
 
     print(f"\n  SPREAD : {sp} {sl} | {sc}% | {sr}")
     print(f"  TOTAL  : {tp} {tl} | {tc}% | {tr}")
@@ -626,55 +629,59 @@ def display_summary(picks):
         print("  ⚑ RULE 31 STAR ABSORPTION CEILING ACTIVE")
 
     try:
-        gap = float(str(picks.get("rule32_gap",0)).replace("—","0") or 0)
+        gap = float(str(picks.get("rule32_gap", 0)).replace("—", "0") or 0)
         if gap >= 2:
-            print(f"  ▲ RULE 32 GAP={gap}pts | "
-                  f"Dog prob: {picks.get('rule32_underdog_prob','—')}% | "
-                  f"{picks.get('rule32_recommendation','—')}")
+            print(
+                f"  ▲ RULE 32 GAP={gap}pts | "
+                f"Dog prob: {picks.get('rule32_underdog_prob', '—')}% | "
+                f"{picks.get('rule32_recommendation', '—')}"
+            )
     except (ValueError, TypeError):
         pass
 
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
+
 
 def save_to_log(game_data, picks, pdf_path):
     """Append pick to the running picks log"""
     log_file = "picks_log.json"
     entry = {
-        "date":                  game_data["game_date"],
-        "game":                  f"{game_data['team1']} vs {game_data['team2']}",
-        "sport":                 game_data["sport"],
-        "context":               game_data["context"],
-        "spread_pick":           picks.get("spread_pick"),
-        "spread_line":           picks.get("spread_line"),
-        "spread_confidence":     picks.get("spread_confidence"),
+        "date": game_data["game_date"],
+        "game": f"{game_data['team1']} vs {game_data['team2']}",
+        "sport": game_data["sport"],
+        "context": game_data["context"],
+        "spread_pick": picks.get("spread_pick"),
+        "spread_line": picks.get("spread_line"),
+        "spread_confidence": picks.get("spread_confidence"),
         "spread_recommendation": picks.get("spread_recommendation"),
-        "total_pick":            picks.get("total_pick"),
-        "total_line":            picks.get("total_line"),
-        "total_confidence":      picks.get("total_confidence"),
-        "best_bet":              picks.get("best_bet"),
-        "best_bet_confidence":   picks.get("best_bet_confidence"),
-        "predicted_score":       picks.get("predicted_score"),
-        "rule20_active":         picks.get("rule20_active"),
-        "rule31_active":         picks.get("rule31_active"),
-        "rule32_gap":            picks.get("rule32_gap"),
+        "total_pick": picks.get("total_pick"),
+        "total_line": picks.get("total_line"),
+        "total_confidence": picks.get("total_confidence"),
+        "best_bet": picks.get("best_bet"),
+        "best_bet_confidence": picks.get("best_bet_confidence"),
+        "predicted_score": picks.get("predicted_score"),
+        "rule20_active": picks.get("rule20_active"),
+        "rule31_active": picks.get("rule31_active"),
+        "rule32_gap": picks.get("rule32_gap"),
         "rule32_recommendation": picks.get("rule32_recommendation"),
-        "pdf_report":            pdf_path,
-        "result":                "PENDING"
+        "pdf_report": pdf_path,
+        "result": "PENDING",
     }
 
     existing = []
     if os.path.exists(log_file):
         try:
-            with open(log_file,'r') as f:
+            with open(log_file, "r") as f:
                 existing = json.load(f)
         except Exception:
             existing = []
 
     existing.append(entry)
-    with open(log_file,'w') as f:
+    with open(log_file, "w") as f:
         json.dump(existing, f, indent=2)
 
     print(f"Pick logged to {log_file}")
+
 
 def main():
     if not check_setup():
@@ -696,11 +703,12 @@ def main():
     pdf_path = generate_pdf_report(game_data, result)
 
     print("\n[4/4] Logging pick...")
-    save_to_log(game_data, result.get("picks",{}), pdf_path)
+    save_to_log(game_data, result.get("picks", {}), pdf_path)
 
-    display_summary(result.get("picks",{}))
+    display_summary(result.get("picks", {}))
     print(f"PDF report saved to: {pdf_path}")
     print("Download it from the Replit file panel on the left.\n")
+
 
 if __name__ == "__main__":
     main()
