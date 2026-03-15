@@ -174,5 +174,27 @@
     "rule32_recommendation": "PASS",
     "pdf_report": "reports/Purdue_vs_Michigan_March_15_2026.pdf",
     "result": "PENDING"
+  },
+  {
+    "date": "March 15, 2026",
+    "game": "Purdue vs Michigan",
+    "sport": "NCAAMB",
+    "context": "NCAA Tournament",
+    "spread_pick": "PASS",
+    "spread_line": "-5.5",
+    "spread_confidence": 0,
+    "spread_recommendation": "PASS",
+    "total_pick": "PASS",
+    "total_line": 149.5,
+    "total_confidence": 0,
+    "best_bet": "NO BET - Game state indeterminate, data unavailable, analysis impossible per framework requirements",
+    "best_bet_confidence": 0,
+    "predicted_score": "PREDICTION SUSPENDED - Cannot project score without verified box scores, injury reports, and confirmed pre-game status",
+    "rule20_active": false,
+    "rule31_active": false,
+    "rule32_gap": 0,
+    "rule32_recommendation": "PASS",
+    "pdf_report": "reports/Purdue_vs_Michigan_March_15_2026.pdf",
+    "result": "PENDING"
   }
 ]

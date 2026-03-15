@@ -26,6 +26,10 @@ author = "agent"
 task = "workflow.run"
 args = "Run Betting Analyzer"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Run Batch Analyzer"
+
 [[workflows.workflow]]
 name = "Run Betting Analyzer"
 author = "agent"
@@ -33,6 +37,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd /home/runner/workspace && python3 main.py"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "Run Batch Analyzer"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd /home/runner/workspace && python3 batch_analyzer.py"
 
 [workflows.workflow.metadata]
 outputType = "console"
