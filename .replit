@@ -1,18 +1,9 @@
-modules = ["nodejs-24", "python-3.11"]
+run = "python app.py"
+modules = ["python-3.11"]
 
-[[artifacts]]
-id = "artifacts/api-server"
-
-[[artifacts]]
-id = "artifacts/mockup-sandbox"
-
-[deployment]
-router = "application"
-deploymentTarget = "autoscale"
-
-[deployment.postBuild]
-args = ["pnpm", "store", "prune"]
-env = { "CI" = "true" }
+[[ports]]
+localPort = 8000
+externalPort = 8000
 
 [workflows]
 runButton = "Project"
@@ -24,55 +15,16 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Run Betting Analyzer"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Run Batch Analyzer"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
 args = "Run Tracker"
-
-[[workflows.workflow]]
-name = "Run Betting Analyzer"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd /home/runner/workspace && python3 main.py"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[[workflows.workflow]]
-name = "Run Batch Analyzer"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd /home/runner/workspace && python3 batch_analyzer.py"
-
-[workflows.workflow.metadata]
-outputType = "console"
 
 [[workflows.workflow]]
 name = "Run Tracker"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "console"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd /home/runner/workspace && python3 -c \"import tracker; tracker.serve_tracker(port=8000)\""
+args = "python3 -c \"import tracker; tracker.serve_tracker(port=8000)\""
 waitForPort = 8000
-
-[workflows.workflow.metadata]
-outputType = "webview"
-
-[agent]
-stack = "PNPM_WORKSPACE"
-expertMode = true
-
-[postMerge]
-path = "scripts/post-merge.sh"
-timeoutMs = 20000
-
