@@ -13,4 +13,18 @@
     "rule31": false,
     "rule32_gap": 0
   }
+  {
+    "date": "March 15, 2026",
+    "game": "Wichita State @ USF",
+    "market": "SPREAD",
+    "pick": "USF -5.5 (FanDuel)",
+    "confidence": 57,
+    "units": 1.5,
+    "tier": "RECOMMENDED",
+    "tweet_id": "",
+    "result": "WIN",
+    "rule20": false,
+    "rule31": false,
+    "rule32_gap": 0
+  },
 ]
