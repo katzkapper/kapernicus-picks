@@ -2,8 +2,20 @@ run = "python app.py"
 modules = ["python-3.11"]
 
 [[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
 localPort = 8000
 externalPort = 8000
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
 
 [workflows]
 runButton = "Project"
@@ -21,10 +33,10 @@ args = "Run Tracker"
 name = "Run Tracker"
 author = "agent"
 
-[workflows.workflow.metadata]
-outputType = "console"
-
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python3 -c \"import tracker; tracker.serve_tracker(port=8000)\""
 waitForPort = 8000
+
+[workflows.workflow.metadata]
+outputType = "console"

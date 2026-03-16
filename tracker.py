@@ -408,7 +408,6 @@ def build_html(picks, stats):
         </div>
         <div style="font-size:13px;color:#aaa;
                     margin-top:6px;">
-            32-Rule Model v7 &nbsp;|&nbsp;
             NCAA Men's Basketball
         </div>
         <div style="font-size:11px;color:#666;
@@ -605,7 +604,7 @@ def build_html(picks, stats):
     <!-- FOOTER -->
     <div style="text-align:center;font-size:11px;
                 color:#999;padding:20px 0 40px 0;">
-        Kapernicus Picks — 32-Rule Model v7<br>
+                Kapernicus Picks<br>
         For entertainment and informational purposes
         only. Gambling involves risk.<br>
         Problem Gambling Helpline: 1-800-GAMBLER.
