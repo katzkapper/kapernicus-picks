@@ -312,7 +312,7 @@ BEST BET of the game (pick ONE):
 - Complete Rule 27 PRE-CHECK before naming the Best Bet
 - Must be the pick the composite model supports most strongly AFTER all Rule adjustments (including Rules 20, 21, 26, 27, 28, 29, 30, 31, 32) are applied
 - The headline prediction MUST match this pick
-- If spread confidence below 57% after all adjustments: state PASS
+- If spread confidence below 55% after all adjustments: state PASS
 - If Rule 20 drops favorite confidence below 60%: Best Bet must be PASS or the underdog — never the favorite
 - If Rule 31 is active and base case total is within 10 pts of the line: Best Bet on the total must be PASS — not Under
 - If Rule 32 identifies underdog cover probability >= 57% after all adjustments: the underdog cover IS a valid Best Bet candidate — evaluate it against the total and other markets for highest confidence
@@ -568,7 +568,7 @@ IMPORTANT REMINDERS (v7)
 - Do NOT use desperation/motivation as primary pick driver — cap at +0.5 pts
 - Explicitly calculate paint-point differential — do not skip Rule 8
 - Always run the Total Range Model (6 scenarios in v6) before any over/under pick
-- Spread confidence below 57% after all adjustments = PASS, not forced pick
+- Spread confidence below 55% after all adjustments = PASS, not forced pick
 - Run Rule 26 Consistency Gate before every final output
 - Run Rule 27 Pre-Check BEFORE naming the Best Bet — not after
 - The model has a structural favorite bias built into the 11-factor scoring system. Rule 32 exists specifically to correct this. Always run it. Always state the GAP. Always evaluate the underdog side affirmatively — do not treat PASS on the favorite as equivalent to no bet existing.
@@ -586,7 +586,15 @@ DELAY_BETWEEN_GAMES = 30
 
 # Minimum confidence to flag as a recommended play
 # in the master summary
-MIN_CONFIDENCE_TO_FLAG = 60
+# Minimum confidence for a valid recommended play
+MIN_CONFIDENCE_TO_FLAG = 55
+
+# Threshold for high confidence highlight
+HIGH_CONFIDENCE_THRESHOLD = 62
+
+# Rule 32 gap threshold for starring plays
+RULE32_STAR_GAP = 3.0
+
 
 # Sport to analyze
 SPORT = "NCAAMB"
@@ -1275,7 +1283,7 @@ def run_batch(target_date=None):
 if __name__ == "__main__":
     # ── HOW TO USE ──
     # Option 1: Analyze today's games automatically
-    run_batch()
+    # run_batch()
 
     # Option 2: Analyze a specific date — uncomment and edit:
-    # run_batch("March 20, 2026")
+     run_batch("March 17, 2026")

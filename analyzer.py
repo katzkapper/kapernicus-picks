@@ -6,11 +6,32 @@ import re
 client = anthropic.Anthropic(
     api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
 
-SYSTEM_PROMPT = """You are a professional sports betting analyst specializing in data-driven game predictions. Before making any prediction, you must pull live data, verify box scores, and cross-reference all inputs against actual rosters.
+SYSTEM_PROMPT = """You are a professional sports betting \
+analyst specializing in data-driven game predictions. \
+Before making any prediction, you must pull live data, \
+verify box scores, and cross-reference all inputs against \
+actual rosters.
 
-Follow the complete 32-rule analytical framework provided in each user message. Apply every rule explicitly and thoroughly.
+Follow the complete 32-rule analytical framework provided \
+in each user message. Apply every rule explicitly and \
+thoroughly.
 
-CRITICAL INSTRUCTION: You MUST end every response with a picks summary block. After your full analysis, on a new line write <PICKS> then on the next line write a valid JSON object, then on the next line write </PICKS>. Do not put anything else inside those tags. The JSON must use this exact structure with no missing fields:
+CONFIDENCE THRESHOLDS:
+- Below 57%: state PASS — do not issue a pick
+- 57-61%: RECOMMENDED — valid play, 1 unit
+- 62%+: HIGH CONFIDENCE — strong play, 1.5 units
+- Rule 20 active + 57%+: HIGH CONFIDENCE — 1 unit
+- Rule 32 gap 3+ pts + 57%+: HIGH CONFIDENCE — 1.5 units
+- Rule 20 AND Rule 32 both active: HIGH CONFIDENCE — 2 units
+- Spread confidence below 57% after all adjustments: \
+state PASS, not forced pick
+
+CRITICAL INSTRUCTION: You MUST end every response with \
+a picks summary block. After your full analysis, on a new \
+line write <PICKS> then on the next line write a valid JSON \
+object, then on the next line write </PICKS>. Do not put \
+anything else inside those tags. The JSON must use this \
+exact structure with no missing fields:
 
 <PICKS>
 {
@@ -33,7 +54,10 @@ CRITICAL INSTRUCTION: You MUST end every response with a picks summary block. Af
 }
 </PICKS>
 
-Use only lowercase true/false for booleans. Use only numbers (no quotes) for confidence values and gaps. Never omit any field."""
+Use only lowercase true/false for booleans. Use only \
+numbers (no quotes) for confidence values and gaps. \
+Never omit any field."""
+
 
 def build_user_prompt(game_data, full_model_prompt):
     return f"""{full_model_prompt}
@@ -63,14 +87,16 @@ INSTRUCTIONS:
 4. Generate the complete report following the Step 7 format
 5. You MUST end with the <PICKS> JSON block — this is required
 
-REMINDER: End your response with the <PICKS> block. Without it the
-report cannot display the picks summary. It is mandatory."""
+REMINDER: End your response with the <PICKS> block. \
+Without it the report cannot display the picks summary. \
+It is mandatory."""
+
 
 def run_analysis(game_data, full_model_prompt):
-    print("Sending to Claude for analysis (60-120 seconds)...")
-
-    user_message = build_user_prompt(game_data, full_model_prompt)
-
+    print("Sending to Claude for analysis "
+          "(60-120 seconds)...")
+    user_message = build_user_prompt(
+        game_data, full_model_prompt)
     try:
         response = client.messages.create(
             model="claude-sonnet-4-5",
@@ -80,44 +106,37 @@ def run_analysis(game_data, full_model_prompt):
                 {"role": "user", "content": user_message}
             ]
         )
-
         full_response = response.content[0].text
         print("Analysis complete.")
-
         picks = extract_picks(full_response)
-
-        # If parse still failed, make a second attempt
         if picks.get("parse_failed"):
             print("  First parse failed — attempting recovery...")
             picks = extract_picks_fallback(full_response)
-
         return {
             "full_analysis": full_response,
-            "picks": picks,
+            "picks":         picks,
             "usage": {
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens
+                "input_tokens":
+                    response.usage.input_tokens,
+                "output_tokens":
+                    response.usage.output_tokens
             }
         }
-
     except Exception as e:
         return {
-            "error": str(e),
+            "error":         str(e),
             "full_analysis": f"Analysis failed: {str(e)}",
-            "picks": {}
+            "picks":         {}
         }
 
+
 def extract_picks(response_text):
-    """Primary extraction — looks for <PICKS> tags"""
     try:
         match = re.search(
             r'<PICKS>\s*(.*?)\s*</PICKS>',
-            response_text,
-            re.DOTALL
-        )
+            response_text, re.DOTALL)
         if match:
             raw = match.group(1).strip()
-            # Clean common JSON issues Claude introduces
             raw = raw.replace('\n', ' ')
             raw = re.sub(r',\s*}', '}', raw)
             raw = re.sub(r',\s*]', ']', raw)
@@ -126,21 +145,16 @@ def extract_picks(response_text):
         print(f"  Primary parse error: {e}")
     return {"parse_failed": True}
 
+
 def extract_picks_fallback(response_text):
-    """
-    Fallback — tries to find any JSON-like block
-    near the end of the response
-    """
     try:
-        # Look for the last { ... } block in the response
-        matches = list(re.finditer(r'\{[^{}]+\}', response_text, re.DOTALL))
+        matches = list(re.finditer(
+            r'\{[^{}]+\}', response_text, re.DOTALL))
         if matches:
-            # Try the last few matches working backwards
             for match in reversed(matches[-5:]):
                 try:
                     candidate = match.group(0)
                     parsed = json.loads(candidate)
-                    # Check it has at least one expected field
                     if any(k in parsed for k in [
                         "spread_pick", "total_pick",
                         "best_bet", "spread_recommendation"
@@ -151,68 +165,56 @@ def extract_picks_fallback(response_text):
                     continue
     except Exception as e:
         print(f"  Fallback parse error: {e}")
-
-    # Last resort — extract key values from plain text
     print("  Using text extraction as last resort.")
     return extract_picks_from_text(response_text)
 
+
 def extract_picks_from_text(text):
-    """
-    Last resort — scan the analysis text for pick-related
-    phrases and build a picks dict from them
-    """
     picks = {
-        "spread_pick": "See analysis",
-        "spread_line": "—",
-        "spread_confidence": 0,
+        "spread_pick":           "See analysis",
+        "spread_line":           "—",
+        "spread_confidence":     0,
         "spread_recommendation": "See analysis",
-        "total_pick": "See analysis",
-        "total_line": 0,
-        "total_confidence": 0,
-        "total_recommendation": "See analysis",
-        "best_bet": "See full analysis — auto-extracted",
-        "best_bet_confidence": 0,
-        "predicted_score": "See analysis",
-        "rule20_active": False,
-        "rule31_active": False,
-        "rule32_gap": 0,
-        "rule32_underdog_prob": 0,
+        "total_pick":            "See analysis",
+        "total_line":            0,
+        "total_confidence":      0,
+        "total_recommendation":  "See analysis",
+        "best_bet":              "See full analysis",
+        "best_bet_confidence":   0,
+        "predicted_score":       "See analysis",
+        "rule20_active":         False,
+        "rule31_active":         False,
+        "rule32_gap":            0,
+        "rule32_underdog_prob":  0,
         "rule32_recommendation": "See analysis"
     }
-
     text_lower = text.lower()
-
-    # Rule flags
-    if "sharp fade in effect" in text_lower or \
-       "rule 20" in text_lower and "triggered" in text_lower:
+    if ("sharp fade in effect" in text_lower or
+            ("rule 20" in text_lower and
+             "triggered" in text_lower)):
         picks["rule20_active"] = True
-    if "rule 31 active" in text_lower or \
-       "star absorption" in text_lower:
+    if ("rule 31 active" in text_lower or
+            "star absorption" in text_lower):
         picks["rule31_active"] = True
-
-    # Best bet
-    bb_match = re.search(
+    bb = re.search(
         r'best bet[:\s]+([^\n]+)', text, re.IGNORECASE)
-    if bb_match:
-        picks["best_bet"] = bb_match.group(1).strip()[:80]
-
-    # Predicted score
-    score_match = re.search(
-        r'predicted score[:\s]+([^\n]+)', text, re.IGNORECASE)
-    if score_match:
-        picks["predicted_score"] = score_match.group(1).strip()
-
-    # Under/Over
-    if "best bet" in text_lower and "under" in text_lower:
-        picks["total_pick"] = "Under"
-        picks["total_recommendation"] = "BET"
-    elif "best bet" in text_lower and "over" in text_lower:
-        picks["total_pick"] = "Over"
-        picks["total_recommendation"] = "BET"
-
-    # PASS detection
-    if "pass" in text_lower and "spread" in text_lower:
+    if bb:
+        picks["best_bet"] = bb.group(1).strip()[:80]
+    sc = re.search(
+        r'predicted score[:\s]+([^\n]+)',
+        text, re.IGNORECASE)
+    if sc:
+        picks["predicted_score"] = sc.group(1).strip()
+    if ("best bet" in text_lower and
+            "under" in text_lower):
+        picks["total_pick"]            = "Under"
+        picks["total_recommendation"]  = "BET"
+    elif ("best bet" in text_lower and
+          "over" in text_lower):
+        picks["total_pick"]            = "Over"
+        picks["total_recommendation"]  = "BET"
+    if ("pass" in text_lower and
+            "spread" in text_lower):
         picks["spread_recommendation"] = "PASS"
-        picks["spread_pick"] = "PASS"
-
+        picks["spread_pick"]           = "PASS"
     return picks
