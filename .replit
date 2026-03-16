@@ -30,6 +30,10 @@ args = "Run Betting Analyzer"
 task = "workflow.run"
 args = "Run Batch Analyzer"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Run Tracker"
+
 [[workflows.workflow]]
 name = "Run Betting Analyzer"
 author = "agent"
@@ -51,6 +55,18 @@ args = "cd /home/runner/workspace && python3 batch_analyzer.py"
 
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow]]
+name = "Run Tracker"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd /home/runner/workspace && python3 -c \"import tracker; tracker.serve_tracker(port=8000)\""
+waitForPort = 8000
+
+[workflows.workflow.metadata]
+outputType = "webview"
 
 [agent]
 stack = "PNPM_WORKSPACE"

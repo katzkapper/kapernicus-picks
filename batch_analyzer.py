@@ -12,27 +12,34 @@ from reportlab.lib import colors
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
                                  Table, TableStyle, HRFlowable)
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from confidence_utils import (
+    get_confidence_tier, get_unit_size,
+    format_unit_label, get_tier_label,
+    HIGH_CONF_FLOOR, RECOMMENDED_FLOOR,
+    RULE32_STAR_GAP, MODEL_PASS_FLOOR
+)
 
 ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
 
 # ─────────────────────────────────────────────────────────────
-# PASTE YOUR COMPLETE 32-RULE PROMPT HERE
-# Same prompt as in main.py — copy and paste it below
+# PASTE YOUR COMPLETE 32-RULE PROMPT BETWEEN THE TRIPLE QUOTES
 # ─────────────────────────────────────────────────────────────
 FULL_MODEL_PROMPT = """
-You are a professional sports betting analyst specializing in data-driven
-game predictions. Before making any prediction, you must pull live data,
-verify box scores, and cross-reference all inputs against actual rosters.
+You are a professional sports betting analyst specializing in data-driven game predictions. Before making any prediction, you must pull live data, verify box scores, and cross-reference all inputs against actual rosters.
 
 ═══════════════════════════════════════════
-GAME DETAILS
+CONFIDENCE THRESHOLDS AND UNIT SIZING
 ═══════════════════════════════════════════
-Sport: Basketball
-League: NCAA Men's Basketball
-Team 1 (Away): [TEAM]
-Team 2 (Home): [TEAM]
-Date/Time: [DATE] / [TIME] EST
-Context: [Conference Tournament / Regular Season / etc.]
+- Below 57%: state PASS — do not issue a pick
+- 57-61%: RECOMMENDED — valid play, 1 unit
+- 62%+: HIGH CONFIDENCE — strong play, 1.5 units
+- Rule 20 active + 57%+: HIGH CONFIDENCE — 1 unit
+- Rule 32 gap 3+ pts + 57%+: HIGH CONFIDENCE — 1.5 units
+- Rule 20 AND Rule 32 both active: HIGH CONFIDENCE — 2 units
+- Spread confidence below 57% after all adjustments: state PASS on spread
+- Total confidence below 57% after all adjustments: state PASS on total
+- Each market is evaluated INDEPENDENTLY — a PASS on one does not affect the other
+- Issue a Best Bet for every market that independently clears 57%
 
 ═══════════════════════════════════════════
 STEP 1 — DATA COLLECTION (Do this before any analysis)
@@ -148,15 +155,17 @@ FAVORITE OVERPRICING CHECK:
 - State explicitly: "Rule 32 check — Favorite side: Model margin = [X] pts. Line = [Y] pts. Gap = [Z] pts. [Maintained / -5% applied / PASS triggered]."
 
 UNDERDOG COVER PROBABILITY CHECK (mandatory whenever GAP >= 2):
-- When the line exceeds the model margin by 2+ pts, the underdog has structural cover value — the model says the favorite wins by less than the spread requires
-- Calculate the underdog's implied cover probability: this is derived from the distribution of outcomes around the projected margin. As a baseline, a GAP of 2 pts implies approximately 52-54% underdog cover probability; a GAP of 4 pts implies approximately 57-60%; a GAP of 6+ pts implies 62%+
-- Apply ALL standard confidence adjustments (Rule 20, Rule 9 variance, Rule 17 wildcards, Rule 12 fragile, Rule 14 caps) to the underdog cover probability just as you would to the favorite
-- If the underdog's adjusted cover probability reaches 57%+: issue an affirmative UNDERDOG COVER recommendation, not just a PASS on the favorite
-- If the underdog's adjusted cover probability is 52-56%: flag as UNDERDOG VALUE LEAN — marginal edge, reduce bet size to 0.5-1 unit
-- If the underdog's adjusted cover probability is below 52%: PASS on both sides
-- State explicitly: "Rule 32 check — Underdog side: GAP = [Z] pts. Implied underdog cover probability = [X]%. Adjusted cover probability after all rule modifiers = [Y]%. Recommendation: [Underdog cover / Value lean / PASS]."
+- GAP 2.0-2.9 pts: baseline underdog cover probability ~52-54%
+- GAP 3.0-3.9 pts: baseline underdog cover probability ~55-57%
+- GAP 4.0-5.9 pts: baseline underdog cover probability ~57-60%
+- GAP 6.0+ pts: baseline underdog cover probability ~62%+
+- Apply ALL standard confidence adjustments to the underdog cover probability
+- If adjusted underdog cover probability reaches 62%+: HIGH CONFIDENCE UNDERDOG COVER — 1.5 units
+- If adjusted underdog cover probability reaches 57-61%: UNDERDOG COVER — 1 unit
+- If below 57%: PASS on both sides
+- State explicitly: "Rule 32 check — Underdog side: GAP = [Z] pts. Baseline cover prob = [X]%. After rule modifiers: [Y]%. Recommendation: [High Conf Underdog / Underdog cover / PASS]."
 
-IMPORTANT: Rule 32 does not override Rule 20. If Rule 20 is already active (sharp fade), the underdog cover signal is already embedded in the line movement. Rule 32 is for identifying underdog value in games where Rule 20 has NOT fired — i.e., where the public has pushed the favorite's line up (TYPE 1 movement) or where the line opened wide and has not moved. These are the situations most likely to contain mispriced underdogs that the model can identify.
+IMPORTANT: Rule 32 does not override Rule 20. If Rule 20 is already active (sharp fade), state "Rule 20 active — Rule 32 underdog check subsumed." Rule 32 is most powerful in TYPE 1 movement games and static wide lines where public money has inflated the favorite.
 
 ═══════════════════════════════════════════
 STEP 2 — LINE MOVEMENT ANALYSIS
@@ -166,11 +175,11 @@ Document the full line movement history and apply Rule 20 before scoring any fac
 
 LINE MOVEMENT FRAMEWORK (mandatory — apply to every game):
 
-TYPE 1 — Line moves WITH public (favorite grows from open): Public money inflating the line. Square/public action. ACTION: Apply a mild discount (-2 to -3%) to favorite confidence. RULE 32 INTERACTION: TYPE 1 movement is the primary trigger for Rule 32 underdog value check. When the public pushes a line up from the open, the model projected margin stays constant but the spread widens — creating a growing GAP that may produce affirmative underdog cover value. Always run Rule 32 bilateral check when TYPE 1 movement is confirmed.
+TYPE 1 — Line moves WITH public (favorite grows from open): Public money inflating the line. Square/public action. ACTION: Apply a mild discount (-2 to -3%) to favorite confidence. RULE 32 INTERACTION: TYPE 1 movement is the primary trigger for Rule 32 underdog value check. Always run Rule 32 bilateral check when TYPE 1 movement is confirmed.
 
 TYPE 2 — Line retraces back to opening after peaking: Sharp bettors have faded the public move. Market returns to fair value. ACTION: Return to baseline model confidence.
 
-TYPE 3 — Line drops BELOW the opening number: *** RULE 20 TRIGGERS *** Professional bettors have moved the line past where books set it — against the favorite. This is a DIRECTIONAL signal against the favorite. ACTION: Apply Rule 20 in full (see Step 5). v5 TRIGGER THRESHOLD: Triggers when the closing spread at ANY major book is below the opening number by more than 0.5 pts. No partial classifications. No "mild warnings."
+TYPE 3 — Line drops BELOW the opening number: *** RULE 20 TRIGGERS *** Professional bettors have moved the line past where books set it — against the favorite. This is a DIRECTIONAL signal against the favorite. ACTION: Apply Rule 20 in full. v5 TRIGGER THRESHOLD: Triggers when the closing spread at ANY major book is below the opening number by more than 0.5 pts. No partial classifications. No "mild warnings."
 
 TYPE 4 — Total drops 3+ points intraday: Sharps pricing in significant scoring suppression. ACTION: Validate the Under.
 
@@ -187,8 +196,6 @@ BEFORE building the weighted scoring model, state the preliminary projected scor
 
 This preliminary projection is your ANCHOR. The weighted model may adjust it, but the final projected score must remain within +/-4 points of this anchor unless a specific rule explicitly justifies a larger adjustment with a stated numeric reason.
 
-This prevents score projections from drifting to match the spread pick rather than being derived independently from the data.
-
 ═══════════════════════════════════════════
 STEP 3 — WEIGHTED SCORING MODEL
 ═══════════════════════════════════════════
@@ -201,13 +208,13 @@ Adjusted season record        | 6%     | Lagging indicator. De-emphasize hot str
 Lineup-verified H2H record    | 10%    | Only count if same core roster played. Apply Rule 10 for neutral-court margin projection. Apply Rule 23 — 45% discount on any true home-court H2H result.
 Bench scoring margin          | 9%     | Use LOWER of H2H bench data and last-3-game bench average. Apply Rule 13 cap (+3 pts max). Apply Rule 17 BENCH WILDCARD check bilaterally before scoring.
 Star player availability      | 13%    | Flag ALL injuries. Apply Rule 12 if star projects >35% of scoring. Apply Rule 16 style-shift, Rule 22 efficiency discount, Rule 24 role-shift as applicable. RULE 31 (v6): If primary scorer is absent, simultaneously flag the absorbing player's ceiling scenario for the TOTAL model. Rule 12 and Rule 31 must both fire when a star is absent and one player absorbs 35%+ of load.
-Recent form (last 7-10 games) | 9%     | Wins, losses, margins, quality. Apply Rule 11 discount if hot streak built vs sub-50 KenPom/NET. Apply Rule 28 EFFICIENCY CONTEXT DISCOUNT (v5): if recent efficiency was vs defenses outside top-40, apply 15% discount vs top-40 opp. State explicitly with numbers. Motivation cap: +0.5 pts max.
-2nd-half shooting pattern     | 14%    | Calculate each team's 2H FG% drop vs 1H. Apply Rule 7 if pattern in 3 of last 5 games. Apply Rule 25 B2B2B FATIGUE flag ASYMMETRICALLY ONLY (v5): if both teams played the prior night, fatigue is neutralized. Only apply when one team played and the other did not.
+Recent form (last 7-10 games) | 9%     | Wins, losses, margins, quality. Apply Rule 11 discount if hot streak built vs sub-50 KenPom/NET. Apply Rule 28 EFFICIENCY CONTEXT DISCOUNT: if recent efficiency was vs defenses outside top-40, apply 15% discount vs top-40 opp. State explicitly with numbers. Motivation cap: +0.5 pts max.
+2nd-half shooting pattern     | 14%    | Calculate each team's 2H FG% drop vs 1H. Apply Rule 7 if pattern in 3 of last 5 games. Apply Rule 25 B2B2B FATIGUE flag ASYMMETRICALLY ONLY: if both teams played the prior night, fatigue is neutralized. Only apply when one team played and the other did not.
 Neutral/away site factors     | 5%     | Hometown crowd, travel, rest days. Cap rest differential at +3 pts. REST PENALTY for 4+ day layoffs: -1.0 defensive rhythm penalty. MOTIVATION CAP: +0.5 pts max.
-Turnover rate (per player)    | 15%    | Most underpriced factor in championship games. Top-30 AST/TO nationally vs mid-range opponent is worth 15-18 pts in a tight game. RULE 30 CONTEXT CHECK (v5): Before applying AST/TO structural credit, check if opposing defense is top-20 in forcing TOs or limiting assists. If YES, reduce credit by 50%. Apply Rule 4 cascade when primary handler out. Apply Rule 18 check.
-Interior / Paint Dominance    | 8%     | OR rate, 2nd-chance pts, paint pts. Rule 8: +0.5 pts/pct pt OR advantage. Cap at +6 pts max. RULE 29 (v5): If both teams top-3 conference OR, credit = +0 unless H2H OR data overrides. RULE 30 (v5): Check if opposing team top-20 defensive rebounding. If YES, reduce OR credit 50%.
-Supporting cast variance      | 6%     | Std dev of 2nd/3rd/4th scorers. Apply Rule 9. Apply Rule 17. v5: Model the FLOOR case. If HIGH VARIANCE scorer goes cold at <=50% of avg, what is team FG% and total? Include in total range model. RULE 31 (v6): When primary scorer is absent, the absorbing star is no longer supporting cast — they become the primary. Do NOT apply their season average as the scoring anchor. Use 75th-percentile output and model the ceiling.
-Free throw generation         | 5%     | Top-30 FT nationally: +1.5 pt credit. FTA differential +8 or more: +1.0 additional credit. RULE 30 (v5): If opponent is top-20 fewest fouls, reduce FT credit 50%. Flag FT-DISADVANTAGED teams. RULE 31 (v6): Absorbing player under high usage draws +25% more FTAs than their season average. Include in total projection when Rule 31 active.
+Turnover rate (per player)    | 15%    | Most underpriced factor in championship games. Top-30 AST/TO nationally vs mid-range opponent is worth 15-18 pts in a tight game. RULE 30 CONTEXT CHECK: Before applying AST/TO structural credit, check if opposing defense is top-20 in forcing TOs or limiting assists. If YES, reduce credit by 50%. Apply Rule 4 cascade when primary handler out. Apply Rule 18 check.
+Interior / Paint Dominance    | 8%     | OR rate, 2nd-chance pts, paint pts. Rule 8: +0.5 pts/pct pt OR advantage. Cap at +6 pts max. RULE 29: If both teams top-3 conference OR, credit = +0 unless H2H OR data overrides. RULE 30: Check if opposing team top-20 defensive rebounding. If YES, reduce OR credit 50%.
+Supporting cast variance      | 6%     | Std dev of 2nd/3rd/4th scorers. Apply Rule 9. Apply Rule 17. Model the FLOOR case. If HIGH VARIANCE scorer goes cold at <=50% of avg, what is team FG% and total? Include in total range model. RULE 31: When primary scorer is absent, the absorbing star is no longer supporting cast — they become the primary. Do NOT apply their season average as the scoring anchor. Use 75th-percentile output and model the ceiling.
+Free throw generation         | 5%     | Top-30 FT nationally: +1.5 pt credit. FTA differential +8 or more: +1.0 additional credit. RULE 30: If opponent is top-20 fewest fouls, reduce FT credit 50%. Flag FT-DISADVANTAGED teams. RULE 31: Absorbing player under high usage draws +25% more FTAs than their season average. Include in total projection when Rule 31 active.
 
 WEIGHT AUDIT: 6+10+9+13+9+14+5+15+8+6+5 = 100%
 
@@ -236,9 +243,9 @@ Before finalizing prediction, explicitly answer each question:
 [ ] RULE 28 — Was recent offensive efficiency generated vs top-40 defenses? (If not, apply 15% discount to efficiency figures vs top-40 opponent.)
 [ ] RULE 29 — Are both teams top-3 conference in offensive rebounding? (If YES, OR credit = +0 unless H2H OR data overrides.)
 [ ] RULE 30 — For each structural credit being applied, does the opponent rank top-20 nationally at neutralizing that exact dimension? (If YES, reduce that credit 50%. Check: AST/TO, FT gen, OR, transition.)
-[ ] INJURY STYLE-SHIFT (Rule 16): Frontcourt injury → pace change → total dir?
-[ ] INJURY ROLE-SHIFT (Rule 24): Injured guard/wing → distributor-first?
-[ ] INJURY SHOOTING-EFFICIENCY (Rule 22): Lower-extremity injury → -15% FG%?
+[ ] INJURY STYLE-SHIFT (Rule 16): Frontcourt injury — pace change — total direction?
+[ ] INJURY ROLE-SHIFT (Rule 24): Injured guard/wing — distributor-first?
+[ ] INJURY SHOOTING-EFFICIENCY (Rule 22): Lower-extremity injury — -15% FG%?
 [ ] SECOND-CHANCE POSSESSION SURPLUS: Dominant OR edge (+5/game)? (+5-7 pts to total. Apply Rule 29 check first.)
 [ ] BENCH WILDCARD (Rule 17): Any bench player 20+ pts in last 10 games? (Flag both teams. Widen CI +/-3 pts. Reduce opposing cover prob 4%.)
 [ ] TURNOVER CEILING (Rule 18): Either team committed 15+ TOs in last 10? (Flag HIGH-TO-CEILING. Reduce cover prob 5%, widen CI +/-3 pts.)
@@ -247,27 +254,26 @@ Before finalizing prediction, explicitly answer each question:
 [ ] SHARP LINE OVERRIDE (Rule 20): Has spread dropped below opening at ANY major book by more than 0.5 pts? If YES — Rule 20 fully active. No partial classification. Apply full -7% and reconciliation mandate. Structural credits do not counteract a confirmed sharp fade.
 [ ] RULE 20 RECONCILIATION: If Rule 20 active, run Steps R1-R4 and show original margin vs reconciled margin side by side.
 [ ] RULE 32 — MARKET PRICE EFFICIENCY CHECK (required every game, bilateral):
-    FAVORITE SIDE: What is the GAP between the current line and the model's projected margin? If GAP >= 2 pts: apply -5% to favorite confidence and flag LINE EXCEEDS MODEL. If GAP >= 4 pts: PASS on favorite. State: "Rule 32 — Favorite: Model margin = [X]. Line = [Y]. Gap = [Z]. [Maintained / -5% / PASS]."
-    UNDERDOG SIDE: If GAP >= 2 pts, calculate underdog implied cover probability (GAP 2 pts = ~52-54%; GAP 4 pts = ~57-60%; GAP 6+ pts = ~62%+). Apply all standard rule modifiers. If adjusted cover probability >= 57%: issue affirmative UNDERDOG COVER recommendation. If 52-56%: UNDERDOG VALUE LEAN at 0.5-1 unit. Below 52%: PASS both sides. State: "Rule 32 — Underdog: GAP = [Z]. Implied cover prob = [X]%. Adjusted = [Y]%. [Underdog cover / Value lean / PASS]."
-    NOTE: Rule 32 does not override Rule 20. If Rule 20 is already active, underdog value is already embedded in the sharp fade signal. Rule 32 primarily targets TYPE 1 movement games and static wide lines where public money has inflated the favorite.
+    FAVORITE SIDE: GAP = current spread minus model projected margin. If GAP >= 2 pts: apply -5% to favorite confidence and flag LINE EXCEEDS MODEL. If GAP >= 4 pts: PASS on favorite. State: "Rule 32 — Favorite: Model margin = [X]. Line = [Y]. Gap = [Z]. [Maintained / -5% / PASS]."
+    UNDERDOG SIDE: If GAP >= 2 pts, calculate underdog implied cover probability. GAP 2 pts = ~52-54%; GAP 3 pts = ~55-57%; GAP 4 pts = ~57-60%; GAP 6+ pts = ~62%+. Apply all standard rule modifiers. If adjusted cover probability >= 62%: HIGH CONFIDENCE UNDERDOG COVER — 1.5 units. If 57-61%: UNDERDOG COVER — 1 unit. Below 57%: PASS both sides. State: "Rule 32 — Underdog: GAP = [Z]. Implied cover prob = [X]%. Adjusted = [Y]%. [High Conf Underdog / Underdog cover / PASS]."
+    NOTE: Rule 32 does not override Rule 20. If Rule 20 is already active, state "Rule 20 active — Rule 32 underdog check subsumed."
 [ ] TOURNAMENT FAVORITE ATS DISCOUNT (Rule 21): Favorite laying 4-8 pts with split season series? (-6% ATS confidence if triggered.)
 [ ] HIGH-VARIANCE TOTAL FLAG (Rule 14): Check all four conditions. Two or more = cap at 60% UNDER confidence. Three or more = NO BET. RULE 31 INTERACTION: If Rule 14 condition (c) (leading scorer injured) fires alongside Rule 31, total recommendation defaults to PASS.
-[ ] RULE 27 PRE-CHECK: Is the projected score consistent with the spread pick BEFORE the Best Bet is named? Fix score first if not.
-[ ] INTERNAL CONSISTENCY GATE (Rule 26): Score, spread pick, and Best Bet all pointing the same direction? State PASSED or FAILED.
+[ ] RULE 27 PRE-CHECK: Is the projected score consistent with BOTH spread and total picks BEFORE the Best Bets are named? Fix score first if not.
+[ ] INTERNAL CONSISTENCY GATE (Rule 26): Score, spread pick, total pick, and Best Bets all pointing the same direction? State PASSED or FAILED.
 
 ═══════════════════════════════════════════
 STEP 4B — RULE 27: PRE-BEST BET SCORE CONSISTENCY MANDATE
 ═══════════════════════════════════════════
-BEFORE naming the Best Bet, complete this mandatory pre-check:
+BEFORE naming any Best Bet, complete this mandatory pre-check:
 
 1. State the Step 2B anchor score projection
 2. State the final projected score after all rule adjustments
 3. Confirm the recommended spread side is consistent with the projected score
-4. If they conflict: REVISE THE SCORE FIRST, then name the Best Bet
+4. Confirm the recommended total side is consistent with the projected combined score
+5. If either conflicts: REVISE THE SCORE FIRST, then name the Best Bets
 
-The Best Bet cannot be named until the score and spread pick already agree. Rule 26 is a final verification gate — it should NEVER be the first place a contradiction is found. If Rule 26 catches a contradiction, that means Step 4B was skipped. Return to Step 4B and fix it.
-
-State explicitly: "RULE 27 PRE-CHECK: Score = [X-Y]. Spread pick = [Team] [line]. [CONSISTENT] or [INCONSISTENT — score revised to [A-B] because [reason].]"
+State explicitly: "RULE 27 PRE-CHECK: Score = [X-Y]. Spread pick = [Team] [line]. Total pick = [Over/Under] [number]. [CONSISTENT] or [INCONSISTENT — score revised to [A-B] because [reason].]"
 
 ═══════════════════════════════════════════
 STEP 5 — BETTING ANALYSIS
@@ -280,9 +286,10 @@ SPREAD:
 - Key stat justifying the pick
 - Projected margin range (low / mid / high scenario)
 - Risk level: Low / Medium / High
+- Unit size: 1 unit (57-61%), 1.5 units (62%+), 0 units (PASS)
 - If Rule 20 is active, state: "SHARP FADE IN EFFECT — confidence adjusted -7% from model baseline. Structural credits already priced by sharp money and are not used to counteract the fade."
 - If Rule 21 is active, state: "TOURNAMENT FAVORITE DISCOUNT APPLIED -6%"
-- If Rule 32 is active, state: "MARKET PRICE EFFICIENCY CHECK APPLIED — Model margin = [X]. Line = [Y]. Gap = [Z]. Favorite confidence [adjusted / PASS]. Underdog cover probability = [Y]%. Recommendation: [Underdog cover / Value lean / PASS both sides]."
+- If Rule 32 is active, state: "MARKET PRICE EFFICIENCY CHECK APPLIED — Model margin = [X]. Line = [Y]. Gap = [Z]. Favorite confidence [adjusted / PASS]. Underdog cover probability = [Y]%. Recommendation: [Underdog cover / PASS both sides]."
 
 MONEYLINE:
 - ONLY recommend if confidence > 65% AND value is present
@@ -294,28 +301,35 @@ TOTAL (Over/Under):
 - Pull last 5 game totals for both teams
 - Flag tournament/elimination context (games typically go UNDER)
 - Historical under/over rate for both teams in last 10 games
+- Unit size: 1 unit (57-61%), 1.5 units (62%+), 0 units (PASS)
 
-TOTAL RANGE MODEL (mandatory for every total pick — 6 scenarios in v6):
+TOTAL RANGE MODEL (mandatory for every total pick — 6 scenarios):
 — BASE CASE: season averages + tournament pace reduction applied
 — HOT-SHOOTING SCENARIO: both teams hit top-quartile 3PT%
 — COLD-SHOOTING SCENARIO: both teams hit bottom-quartile 3PT%
-— FLOOR SCENARIO (v5): HIGH VARIANCE scorer(s) cold at <=50% of avg
+— FLOOR SCENARIO: HIGH VARIANCE scorer(s) cold at <=50% of avg
 — INJURY-ADJUSTMENT SCENARIO: pace direction per Rules 16/22/24
-— STAR ABSORPTION CEILING SCENARIO (v6, NEW — Rule 31): Required whenever Rule 31 is active. Use absorbing player's 75th-pct output plus +25% FTA adjustment. State projected team total and combined total explicitly. If this scenario produces a combined total within 10 pts of the line on the OVER side, the total recommendation must be PASS, not Under.
+— STAR ABSORPTION CEILING SCENARIO (Rule 31): Required whenever Rule 31 is active. Use absorbing player's 75th-pct output plus +25% FTA adjustment. State projected team total and combined total explicitly. If this scenario produces a combined total within 10 pts of the line on the OVER side, the total recommendation must be PASS, not Under.
 
 Only recommend UNDER if BASE CASE and COLD scenario both support it AND Rule 31 Star Absorption Ceiling scenario does not produce a combined total within 10 pts of the line. If HOT scenario produces total 10+ points above the line, reduce UNDER confidence by 10 percentage points. Apply Rule 14 cap before issuing any UNDER recommendation.
 
 PARLAY (if applicable):
-- Only suggest if two independent high-confidence picks exist (both >=61%)
+- Only suggest if two independent high-confidence picks exist (both >= 61%)
 
-BEST BET of the game (pick ONE):
-- Complete Rule 27 PRE-CHECK before naming the Best Bet
-- Must be the pick the composite model supports most strongly AFTER all Rule adjustments (including Rules 20, 21, 26, 27, 28, 29, 30, 31, 32) are applied
-- The headline prediction MUST match this pick
-- If spread confidence below 55% after all adjustments: state PASS
-- If Rule 20 drops favorite confidence below 60%: Best Bet must be PASS or the underdog — never the favorite
-- If Rule 31 is active and base case total is within 10 pts of the line: Best Bet on the total must be PASS — not Under
-- If Rule 32 identifies underdog cover probability >= 57% after all adjustments: the underdog cover IS a valid Best Bet candidate — evaluate it against the total and other markets for highest confidence
+BEST BETS (issue ALL plays that meet the confidence threshold):
+- Complete Rule 27 PRE-CHECK before naming any Best Bet
+- Do NOT limit to one pick. Issue a Best Bet for EVERY market that independently meets the confidence threshold after all rule adjustments are applied
+- BEST BET 1 — SPREAD: Issue if spread confidence >= 57% after all adjustments. State pick, line, confidence, units. If below 57%: state SPREAD = PASS
+- BEST BET 2 — TOTAL: Issue if total confidence >= 57% after all adjustments. State pick, line, confidence, units. If below 57%: state TOTAL = PASS
+- Both picks are evaluated INDEPENDENTLY. A PASS on the spread does not affect the total recommendation and vice versa. A PASS on the total does not prevent a spread Best Bet.
+- The headline prediction must be consistent with BOTH picks
+- If Rule 20 drops spread confidence below 60%: spread Best Bet must be PASS or underdog — never the favorite
+- If Rule 31 is active and base case total is within 10 pts of the line: total Best Bet must be PASS — not Under
+- If Rule 32 identifies underdog cover probability >= 57%: the underdog cover IS a valid spread Best Bet
+- State unit size with EVERY Best Bet: 1 unit (57-61%), 1.5 units (62%+), 2 units (Rule 20 + Rule 32 both active)
+- Label picks clearly:
+  BEST BET — SPREAD: [pick] [line] ([conf]% — [units])
+  BEST BET — TOTAL: [pick] [line] ([conf]% — [units])
 
 ═══════════════════════════════════════════
 STEP 6 — MANDATORY MODEL RULES (32 Total)
@@ -348,7 +362,7 @@ RULE 8 — PAINT SCORING AUDIT
 Calculate expected paint-point differential based on OR rate and interior FG%. Credit +0.5 spread pts per percentage point of OR advantage. Cap at +6 pts. Produce a numeric estimate — no vague language. Apply Rule 29 Bilateral OR Parity check before assigning any credit. Apply Rule 30 defensive context check before assigning any credit. If dominant OR edge (+5/game), model additional possessions (+5-7 pts total).
 
 RULE 9 — SUPPORTING CAST VARIANCE FLAG
-Calculate scoring std dev for 2nd/3rd/4th scorers across last 5 games. If any non-primary scorer averages 12+ PPG with std dev 7+ pts, flag as HIGH VARIANCE. Widen spread CI by +/-4 pts. Apply Rule 17 alongside. v5 ADDITION: Model the FLOOR case. If this player has a cold game at <=50% of their average, what is the resulting team FG% and projected total? Include this floor scenario in every total range model when triggered. RULE 31 INTERACTION: When Rule 31 is active, the absorbing player has graduated from supporting cast to de facto primary. Do NOT apply Rule 9 variance analysis using their season average as the anchor. Apply Rule 31 ceiling modeling instead.
+Calculate scoring std dev for 2nd/3rd/4th scorers across last 5 games. If any non-primary scorer averages 12+ PPG with std dev 7+ pts, flag as HIGH VARIANCE. Widen spread CI by +/-4 pts. Apply Rule 17 alongside. Model the FLOOR case. If this player has a cold game at <=50% of their average, what is the resulting team FG% and projected total? Include this floor scenario in every total range model when triggered. RULE 31 INTERACTION: When Rule 31 is active, the absorbing player has graduated from supporting cast to de facto primary. Do NOT apply Rule 9 variance analysis using their season average as the anchor. Apply Rule 31 ceiling modeling instead.
 
 RULE 10 — H2H MARGIN NEUTRALIZATION
 Neutral Projection = Road H2H Margin + 2 to 3 points. Do NOT multiply or amplify the margin. See Rule 23 for home court discount.
@@ -368,13 +382,13 @@ If ANY TWO of these conditions exist simultaneously, max UNDER confidence is cap
 (b) One team playing first tournament game after 4+ days rest
 (c) Either team's leading scorer injured or in foul trouble
 (d) Combined team TO rate differential > 4 turnovers/game
-If THREE OR MORE conditions present: UNDER is NO BET. State "NO BET — RULE 14 TRIGGERED" explicitly. RULE 31 INTERACTION: Condition (c) is precisely the trigger for Rule 31. When condition (c) fires Rule 14, check whether Rule 31 also fires. If both Rule 14(c) and Rule 31 are active simultaneously, the total recommendation defaults to PASS regardless of other conditions, because the ceiling risk (Rule 31) and the variance cap (Rule 14) are both pointing away from a confident Under.
+If THREE OR MORE conditions present: UNDER is NO BET. State "NO BET — RULE 14 TRIGGERED" explicitly. RULE 31 INTERACTION: Condition (c) is precisely the trigger for Rule 31. When condition (c) fires Rule 14, check whether Rule 31 also fires. If both Rule 14(c) and Rule 31 are active simultaneously, the total recommendation defaults to PASS regardless of other conditions.
 
 RULE 15 — BILATERAL 3PT VARIANCE
 When both teams are above 37% 3PT in recent play, max UNDER confidence is 58% standalone. Regression on one side does not neutralize upside on other.
 
 RULE 16 — INJURY STYLE-SHIFT MANDATE
-Never model an injury as a simple point subtraction. Assess the replacement and resulting style change: Frontcourt star lost → smaller lineup → pace UP → total UP. Perimeter scorer lost → efficiency DOWN. Primary ball-handler lost → turnover risk UP → Rule 4 cascade. Apply Rule 22 simultaneously for lower-extremity injuries. Apply Rule 24 simultaneously for guard/wing lower-extremity injuries. RULE 31 INTERACTION: Rule 16 tells you HOW the offense changes. Rule 31 tells you HOW HIGH it can go when one player takes over. Apply both.
+Never model an injury as a simple point subtraction. Assess the replacement and resulting style change: Frontcourt star lost — smaller lineup — pace UP — total UP. Perimeter scorer lost — efficiency DOWN. Primary ball-handler lost — turnover risk UP — Rule 4 cascade. Apply Rule 22 simultaneously for lower-extremity injuries. Apply Rule 24 simultaneously for guard/wing lower-extremity injuries. RULE 31 INTERACTION: Rule 16 tells you HOW the offense changes. Rule 31 tells you HOW HIGH it can go when one player takes over. Apply both.
 
 RULE 17 — BENCH WILDCARD CEILING
 Pull single-game scoring MAX for every bench player from last 10 games. If any bench player has scored 20+ in ANY game in last 10, flag BENCH WILDCARD. Apply BILATERALLY. When triggered: widen CI +/-3 pts, reduce opposing team's cover probability by 4%. A 7 PPG average player who once scored 28 is a BENCH WILDCARD, not a role player.
@@ -383,13 +397,13 @@ RULE 18 — TURNOVER CEILING RULE
 Pull single-game TO max for each team from last 10 games. If any team has committed 15+ TOs in ANY game in last 10, flag HIGH-TO-CEILING. When triggered: reduce projected scoring 8-10 pts in high-TO scenario, widen CI +/-3 pts, reduce cover probability by 5%. Any player with 5+ TOs in any recent game is a personal TO-ceiling flag.
 
 RULE 19 — FREE THROW GENERATION FACTOR
-Pull FTA per game (last 5 games) and national FT rank. Top-30 nationally in FT made: +1.5 spread-pt credit. FTA differential +8 or more: additional +1.0 credit. Flag FT-DISADVANTAGED teams. Apply Rule 30 before assigning credit: if opponent is top-20 fewest fouls, reduce FT credit by 50%. RULE 31 INTERACTION: When Rule 31 is active, apply a +25% upward adjustment to the absorbing player's projected FTA in the TOTAL model (not the spread model). A player taking 35%+ of shots under elimination pressure draws materially more fouls than their season average suggests.
+Pull FTA per game (last 5 games) and national FT rank. Top-30 nationally in FT made: +1.5 spread-pt credit. FTA differential +8 or more: additional +1.0 credit. Flag FT-DISADVANTAGED teams. Apply Rule 30 before assigning credit: if opponent is top-20 fewest fouls, reduce FT credit by 50%. RULE 31 INTERACTION: When Rule 31 is active, apply a +25% upward adjustment to the absorbing player's projected FTA in the TOTAL model (not the spread model).
 
 RULE 20 — SHARP LINE MOVEMENT OVERRIDE (AMENDED v5)
 When a spread drops more than 0.5 pts below its opening line at ANY major book (DraftKings, FanDuel, BetMGM, bet365), a SHARP FADE is in effect. Cross-book unanimity is NOT required. In thin markets, one major book moving below opening is sufficient. There is no "partial" Rule 20. When triggered: (1) Reduce favorite spread confidence by 7 percentage points. (2) If post-adjustment confidence below 60%, recommendation MUST be PASS or FLIP to underdog — never recommend the favorite. (3) Label all outputs "SHARP FADE IN EFFECT." (4) State: "Sharp money is on the underdog. Structural credits identified in this model were already priced by the bettors who moved this line. They are not used to counteract the sharp fade." CRITICAL: A spread dropping below its opening is NEVER a value opportunity for the favorite. It is a directional signal AGAINST the favorite.
 
 RULE 20 — PROJECTION RECONCILIATION MANDATE
-When Rule 20 is active, reconcile the score projection with the pick: STEP R1: Recalculate projected margin using structural credits (Rule 19 FT, Rule 8 OR) as point values. Apply sharp-money margin compression: a line forced down 1+ pt against 70%+ public ticket volume implies sharp consensus margin is at or below the new spread number. STEP R2: State the revised projected margin explicitly in points. STEP R3: Align the outright prediction with the reconciled margin. STEP R4: Label — "PROJECTED MARGIN REVISED — Rule 20 Reconciliation Applied." Show original model margin and reconciled margin side by side.
+When Rule 20 is active, reconcile the score projection with the pick: STEP R1: Recalculate projected margin using structural credits as point values. Apply sharp-money margin compression. STEP R2: State the revised projected margin explicitly in points. STEP R3: Align the outright prediction with the reconciled margin. STEP R4: Label — "PROJECTED MARGIN REVISED — Rule 20 Reconciliation Applied." Show original model margin and reconciled margin side by side.
 
 RULE 21 — TOURNAMENT FAVORITE ATS DISCOUNT
 When the favorite is laying 4-8 pts AND both teams have played twice AND the season series is split: apply mandatory 6% ATS confidence discount. State: "TOURNAMENT FAVORITE DISCOUNT APPLIED."
@@ -407,10 +421,10 @@ RULE 25 — BACK-TO-BACK-TO-BACK FATIGUE FLAG (AMENDED v5)
 When either team is playing their third game in three consecutive days: (1) Apply mandatory 2H scoring reduction of 5-8% to team with shallower depth chart. (2) If 2H scoring dip observed in prior (Game 2-of-3) game, treat as 60% probability of recurrence in Game 3. (3) Flag as BACK-TO-BACK-TO-BACK FATIGUE RISK. v5 AMENDMENT: Apply ASYMMETRICALLY ONLY. If both teams played the prior night, fatigue is roughly neutralized and must NOT be applied as a one-sided credit for either team.
 
 RULE 26 — INTERNAL CONSISTENCY GATE
-Before finalizing ANY prediction output, run all three checks explicitly: CHECK 1: Does predicted score imply margin consistent with spread pick? CHECK 2: Does spread pick align with outright winner prediction? CHECK 3: Does Best Bet align with headline prediction direction? If ANY check fails, output is INVALID. Revise score, spread pick, or both. State: "RULE 26 CONSISTENCY GATE: PASSED" or "RULE 26 CONSISTENCY GATE: FAILED — [state what was revised]"
+Before finalizing ANY prediction output, run all three checks explicitly: CHECK 1: Does predicted score imply margin consistent with spread pick? CHECK 2: Does spread pick align with outright winner prediction? CHECK 3: Do Best Bets align with headline prediction direction? If ANY check fails, output is INVALID. Revise score, spread pick, or both. State: "RULE 26 CONSISTENCY GATE: PASSED" or "RULE 26 CONSISTENCY GATE: FAILED — [state what was revised]"
 
 RULE 27 — PRE-BEST BET SCORE CONSISTENCY MANDATE
-Before naming the Best Bet, the analyst MUST complete a pre-check: (1) State the Step 2B anchor score projection. (2) State the final projected score after all rule adjustments. (3) Confirm the recommended spread side is consistent with the final score. (4) If inconsistent: REVISE THE SCORE FIRST, then name the Best Bet. The Best Bet cannot be named until score and spread pick already agree. Rule 26 is a final verification gate — not the first place to find a contradiction. State: "RULE 27 PRE-CHECK: Score = [X-Y]. Pick = [Team][line]. [CONSISTENT] or [INCONSISTENT — revised to [A-B] because [reason].]"
+Before naming any Best Bet, the analyst MUST complete a pre-check: (1) State the Step 2B anchor score projection. (2) State the final projected score after all rule adjustments. (3) Confirm the recommended spread side is consistent with the final score. (4) Confirm the recommended total side is consistent with the projected combined score. (5) If inconsistent: REVISE THE SCORE FIRST, then name the Best Bets. State: "RULE 27 PRE-CHECK: Score = [X-Y]. Spread pick = [Team][line]. Total pick = [Over/Under][number]. [CONSISTENT] or [INCONSISTENT — revised to [A-B] because [reason].]"
 
 RULE 28 — OFFENSIVE EFFICIENCY CONTEXT DISCOUNT (v5)
 Recent offensive efficiency (FG%, AST rate, pace, PPG) must be contextualized against the quality of defenses faced. If a team's last 3 game efficiency was generated against defenses ranked outside the top 40 nationally (KenPom/NET), apply a 15% discount to those efficiency figures when projecting against a top-40 defense. State explicitly: "Team X's recent FG% of Y% was generated vs defenses ranked [Z avg KenPom/NET] — applying 15% discount vs [opponent rank] defense. Revised projection: [Y x 0.85]%." Apply to both the spread projection and the total estimate.
@@ -426,40 +440,37 @@ Root cause: Penn 88, Yale 84 OT — Ivy League Championship 2026. TJ Power score
 
 When a team's primary scorer (highest PPG) is confirmed absent AND a single remaining player is projected to absorb 35%+ of that team's scoring load: (1) Pull the absorbing player's single-game scoring maximum from last 10 games. (2) Calculate their 75th-percentile output across last 10 games. (3) Apply a +25% upward adjustment to their projected FTA (high usage = more fouls drawn). (4) Use the 75th-percentile output — NOT their season average — as the anchor for that team's scoring projection in the total model. (5) Widen the total range ceiling by +15 to +20 pts above the base case. (6) If the Star Absorption Ceiling scenario produces a combined total within 10 pts of the line on the Over side: total recommendation = PASS. (7) Do NOT recommend Under when Rule 31 is active unless the base case projected total is at least 10 pts BELOW the line. (8) State explicitly: "Rule 31 active — [Player] absorbing [X]% of load. Season avg [Y] PPG. Max last 10: [Z] pts. 75th pct: [W] pts. Ceiling scenario: [W] pts + [FTA adj] FTs. Total ceiling: [combined]. Base case within 10 pts of line: PASS."
 
-Rule 31 fires SIMULTANEOUSLY with Rule 12. Rule 12 addresses spread risk (single-star dependency → FRAGILE). Rule 31 addresses total risk in the OPPOSITE direction (absorbing star → ceiling output → Over risk). They are not redundant. Both must be applied together whenever a primary scorer is absent and one player absorbs 35%+ of the load.
+Rule 31 fires SIMULTANEOUSLY with Rule 12. Rule 12 addresses spread risk (single-star dependency — FRAGILE). Rule 31 addresses total risk in the OPPOSITE direction (absorbing star — ceiling output — Over risk). They are not redundant. Both must be applied together whenever a primary scorer is absent and one player absorbs 35%+ of the load.
 
 Rule 31 also interacts with Rule 5 (tournament pace). Elimination urgency for an undermanned underdog produces MORE fouls, MORE FTAs, and potentially MORE possessions — not fewer. Do not apply the Rule 5 Under default without first confirming that the Rule 31 ceiling scenario clears the line by 10+ pts.
 
 RULE 32 — MARKET PRICE EFFICIENCY CHECK (v7)
-Root cause: The model's 11-factor weighted scoring system naturally scores the better team higher, which is almost always the favorite. This creates a structural bias toward recommending favorites regardless of whether the line price reflects fair value. Rule 32 corrects this by requiring a bilateral market price check on every game — evaluating both whether the favorite is overpriced AND whether the underdog has affirmative cover value.
+Root cause: The model's 11-factor weighted scoring system naturally scores the better team higher, which is almost always the favorite. This creates a structural bias toward recommending favorites regardless of whether the line price reflects fair value. Rule 32 corrects this by requiring a bilateral market price check on every game.
 
-STEP 1 — COMPUTE THE GAP:
-After the weighted scoring model produces its projected margin, compare it to the current spread. GAP = current spread minus projected margin. A positive GAP means the line is wider than the model projects — the favorite may be overpriced and the underdog may have cover value.
+STEP 1 — COMPUTE THE GAP: GAP = current spread minus projected margin. A positive GAP means the line is wider than the model projects.
 
 STEP 2 — FAVORITE SIDE CHECK:
 - GAP of 0-1.9 pts: No adjustment. Favorite recommendation maintained.
 - GAP of 2-3.9 pts: Apply mandatory -5% confidence reduction to favorite. Flag as LINE EXCEEDS MODEL.
-- GAP of 4+ pts: Favorite recommendation defaults to PASS regardless of composite score. The market is pricing an edge the model does not see, or public money has inflated the line beyond fair value.
-- State explicitly: "Rule 32 — Favorite side: Model margin = [X] pts. Line = [Y] pts. Gap = [Z] pts. [No adjustment / -5% applied — LINE EXCEEDS MODEL / PASS triggered]."
+- GAP of 4+ pts: Favorite recommendation defaults to PASS regardless of composite score.
+- State explicitly: "Rule 32 — Favorite side: Model margin = [X] pts. Line = [Y] pts. Gap = [Z] pts. [No adjustment / -5% applied / PASS triggered]."
 
 STEP 3 — UNDERDOG SIDE CHECK (mandatory when GAP >= 2):
-When the line exceeds the model's projected margin by 2+ pts, the underdog has structural cover value — the model says the favorite wins by less than the spread requires. Calculate the underdog's implied cover probability using the following baseline scale, then apply all standard confidence modifiers:
-- GAP 2.0-2.9 pts → baseline underdog cover probability: ~52-54%
-- GAP 3.0-3.9 pts → baseline underdog cover probability: ~55-57%
-- GAP 4.0-5.9 pts → baseline underdog cover probability: ~57-60%
-- GAP 6.0+ pts → baseline underdog cover probability: ~62%+
-Apply ALL standard rule modifiers to this baseline (Rule 9 variance, Rule 12 fragile, Rule 17 wildcards, Rule 20 if active, Rule 21 if active, Rule 25 fatigue, etc.). These modifiers can increase or decrease the underdog cover probability.
-Final underdog cover probability thresholds:
-- 57%+ adjusted: Issue affirmative UNDERDOG COVER recommendation. This is a valid Best Bet candidate.
-- 52-56% adjusted: Flag as UNDERDOG VALUE LEAN. Reduce bet size to 0.5-1 unit maximum. Not a Best Bet.
-- Below 52% adjusted: PASS on both sides.
-State explicitly: "Rule 32 — Underdog side: GAP = [Z] pts. Baseline cover prob = [X]%. After rule modifiers: [Y]%. Recommendation: [Underdog cover / Value lean / PASS both sides]."
+- GAP 2.0-2.9 pts: baseline ~52-54%
+- GAP 3.0-3.9 pts: baseline ~55-57%
+- GAP 4.0-5.9 pts: baseline ~57-60%
+- GAP 6.0+ pts: baseline ~62%+
+Apply ALL standard rule modifiers. Final thresholds:
+- 62%+ adjusted: HIGH CONFIDENCE UNDERDOG COVER — 1.5 units. Valid Best Bet candidate.
+- 57-61% adjusted: UNDERDOG COVER — 1 unit. Valid Best Bet candidate.
+- Below 57% adjusted: PASS on both sides.
+State explicitly: "Rule 32 — Underdog side: GAP = [Z] pts. Baseline = [X]%. After modifiers: [Y]%. Recommendation: [High Conf Underdog / Underdog cover / PASS]."
 
-STEP 4 — RULE 32 INTERACTION WITH OTHER RULES:
-- Rule 32 does NOT override Rule 20. If Rule 20 is already active (sharp fade confirmed), the underdog signal is already embedded in the line movement. Do not double-count. State: "Rule 20 active — Rule 32 underdog check subsumed."
-- Rule 32 is most powerful in TYPE 1 movement games (public pushed favorite's line up from open) and in static markets where the line opened wide and has not moved. These are the highest-probability scenarios for mispriced underdogs.
-- Rule 32 interacts with Rule 21 (Tournament Favorite Discount): if both fire simultaneously, apply Rule 21's -6% to the favorite AND run the Rule 32 underdog check. They stack — a tournament favorite laying 4-8 pts with a GAP of 3+ pts faces both a mandatory favorite discount and a potential affirmative underdog recommendation.
-- Rule 32 does NOT apply when the GAP is negative (line is tighter than the model projects). A negative GAP means the market sees the game as closer than the model does — this is a signal to reduce confidence in the favorite but does not create underdog value at a number the model already considers tight.
+STEP 4 — RULE 32 INTERACTIONS:
+- Rule 32 does NOT override Rule 20. If Rule 20 is active, state: "Rule 20 active — Rule 32 underdog check subsumed."
+- Rule 32 is most powerful in TYPE 1 movement games and static wide lines where public money has inflated the favorite.
+- Rule 32 stacks with Rule 21: if both fire simultaneously, apply Rule 21's -6% to the favorite AND run the Rule 32 underdog check.
+- Rule 32 does NOT apply when the GAP is negative.
 
 ═══════════════════════════════════════════
 STEP 7 — DELIVERABLE FORMAT
@@ -516,29 +527,28 @@ Structure your response exactly as follows:
    — Show Rule 14 HIGH-VARIANCE flag status
    — Show STRUCTURAL TO EDGE flag and estimated point-swing value (after Rule 30 context reduction)
    — Show Step 2B anchor projection vs final projection
-8. RULE 27 PRE-CHECK (required before Best Bet is named)
-   — "RULE 27 PRE-CHECK: Score = [X-Y]. Pick = [Team][line]. [CONSISTENT / INCONSISTENT — revised to [A-B] because [reason].]"
+8. RULE 27 PRE-CHECK (required before Best Bets are named)
+   — "RULE 27 PRE-CHECK: Score = [X-Y]. Spread pick = [Team][line]. Total pick = [Over/Under][number]. [CONSISTENT / INCONSISTENT — revised to [A-B] because [reason].]"
 9. BETTING RECOMMENDATIONS
-   — Spread pick + confidence % (post all rule adjustments including Rule 32)
+   — BEST BET — SPREAD: [pick] [line] ([conf]% — [units]) OR SPREAD = PASS
+   — BEST BET — TOTAL: [pick] [line] ([conf]% — [units]) OR TOTAL = PASS
    — Rule 20 statement if active (full -7%, structural credits priced in)
    — Rule 20 Reconciliation if applied (revised margin stated explicitly)
    — Rule 21 statement if active (-6%)
-   — Rule 32 statement (GAP, favorite adjustment, underdog cover probability, recommendation)
+   — Rule 32 statement (GAP, favorite adjustment, underdog cover probability, recommendation, unit size)
    — Moneyline assessment
-   — Total pick + confidence
-   — Total Range: Base / Hot / Cold / Floor / Injury / Star Absorption Ceiling (v6)
+   — Total Range: Base / Hot / Cold / Floor / Injury / Star Absorption Ceiling
    — Rule 31 PASS trigger stated explicitly if ceiling scenario within 10 pts of line
    — Rule 14/15 cap status stated explicitly
-   — BEST BET highlighted (may now be underdog cover if Rule 32 produces 57%+ adjusted probability)
-   — PASS stated explicitly if confidence <57% after all adjustments
+   — PASS stated explicitly if confidence below 57% after all adjustments on either market
    — NO BET on total stated if Rule 14 triggered (3+ conditions)
 10. RISK ASSESSMENT TABLE
-11. PREDICTION (must match Best Bet direction)
+11. PREDICTION (must match Best Bet directions)
     — "RULE 27 PRE-CHECK: [result]"
     — "RULE 26 CONSISTENCY GATE: PASSED / FAILED — [revision if any]"
-    — If Rule 20 Reconciliation applied: Original model margin: X pts / Reconciled margin: Y pts / Driver of compression: [stated]
-    — If Rule 31 active: Absorbing player season avg: X PPG / 75th-pct ceiling used: Y pts / Star Absorption total ceiling: Z combined / Total recommendation: PASS / Under (state which and why)
-    — If Rule 32 active: Model margin: X pts / Line: Y pts / GAP: Z pts / Favorite recommendation: [stated] / Underdog cover probability: [Y]% / Underdog recommendation: [stated]
+    — If Rule 20 Reconciliation applied: Original model margin: X pts / Reconciled margin: Y pts / Driver: [stated]
+    — If Rule 31 active: Absorbing player season avg: X PPG / 75th-pct ceiling: Y pts / Total ceiling: Z / Total recommendation: PASS or Under
+    — If Rule 32 active: Model margin: X pts / Line: Y pts / GAP: Z pts / Favorite: [stated] / Underdog cover prob: [Y]% / Units: [stated]
 12. Generate the entire report as a PDF
 
 ═══════════════════════════════════════════
@@ -546,59 +556,107 @@ IMPORTANT REMINDERS (v7)
 ═══════════════════════════════════════════
 
 - Apply Rule 20 FIRST, before any model scoring
-- Rule 20 triggers at ANY major book closing below opening by >0.5 pts. No partial classifications. If it triggers, apply the full -7% and the full Projection Reconciliation Mandate.
-- When Rule 20 is active: structural credits are already priced by the sharp money that moved the line. Do NOT use them to counteract the fade.
-- Complete Rule 27 PRE-CHECK before naming the Best Bet. Fix the score first if score and spread pick are inconsistent.
-- Apply Rule 28: discount recent offensive efficiency if generated against weak defenses. State the discount explicitly with numbers.
+- Rule 20 triggers at ANY major book closing below opening by >0.5 pts. No partial classifications. Apply the full -7% and the full Projection Reconciliation Mandate.
+- When Rule 20 is active: structural credits are already priced. Do NOT use them to counteract the fade.
+- Complete Rule 27 PRE-CHECK before naming any Best Bet. Fix the score first if score and picks are inconsistent.
+- Apply Rule 28: discount recent offensive efficiency if generated against weak defenses. State explicitly with numbers.
 - Apply Rule 29: if both teams are elite conference offensive rebounders, OR credit = +0 unless H2H OR data overrides.
-- Apply Rule 30 to EVERY structural credit before assigning it. If the opponent is top-20 at neutralizing that exact dimension, reduce by 50%. State this explicitly for each credit checked.
-- RULE 31 — STAR ABSORPTION CEILING (v6): When a team's primary scorer is absent and one player absorbs 35%+ of the scoring load, you MUST model that player's ceiling output — NOT their season average — in the total projection. Use their 75th-percentile output from last 10 games. Apply +25% FTA adjustment. Widen total ceiling +15 to +20 pts. If Star Absorption Ceiling scenario produces a combined total within 10 pts of the line: TOTAL = PASS. Do NOT recommend Under unless base case is 10+ pts below the line. Rule 31 fires simultaneously with Rule 12 — they address opposite risks (spread fragility vs total ceiling) and are not redundant. Root cause: Penn 88, Yale 84 OT. TJ Power scored 44 pts (avg: 15.8) after Roberts was ruled out. The model used Power's season average as the anchor. That was the error.
-- RULE 32 — MARKET PRICE EFFICIENCY CHECK (v7, NEW): Run on EVERY game. Compute GAP = current spread minus model projected margin. If GAP >= 2 pts: apply -5% to favorite confidence and flag LINE EXCEEDS MODEL. If GAP >= 4 pts: PASS on favorite. THEN run the bilateral underdog check: GAP 2-3 pts = ~52-57% baseline underdog cover probability; GAP 4-6 pts = ~57-62%; GAP 6+ pts = ~62%+. Apply all standard rule modifiers. If adjusted underdog cover probability reaches 57%+: issue affirmative UNDERDOG COVER recommendation — this is a valid Best Bet candidate. If 52-56%: UNDERDOG VALUE LEAN at reduced size. Below 52%: PASS both sides. Rule 32 does NOT override Rule 20. If Rule 20 is already active, state "Rule 20 active — Rule 32 underdog check subsumed." Rule 32 is most powerful in TYPE 1 movement games where the public has pushed the favorite's line above fair value.
-- Model the FLOOR scenario (Rule 9) for volatile scorers. Include in total range model.
+- Apply Rule 30 to EVERY structural credit before assigning it. If the opponent is top-20 at neutralizing that exact dimension, reduce by 50%. State explicitly for each credit.
+- RULE 31 — STAR ABSORPTION CEILING (v6): When a team's primary scorer is absent and one player absorbs 35%+ of the scoring load, you MUST model that player's ceiling output — NOT their season average — in the total projection. Use their 75th-percentile output from last 10 games. Apply +25% FTA adjustment. Widen total ceiling +15 to +20 pts. If Star Absorption Ceiling scenario produces a combined total within 10 pts of the line: TOTAL = PASS. Do NOT recommend Under unless base case is 10+ pts below the line. Rule 31 fires simultaneously with Rule 12. Root cause: Penn 88, Yale 84 OT. TJ Power scored 44 pts (avg 15.8) after Roberts was ruled out. The model used Power's season average as the anchor. That was the error.
+- RULE 32 — MARKET PRICE EFFICIENCY CHECK (v7): Run on EVERY game. Compute GAP = current spread minus model projected margin. If GAP >= 2 pts: apply -5% to favorite confidence and flag LINE EXCEEDS MODEL. If GAP >= 4 pts: PASS on favorite. Then run the bilateral underdog check. GAP 2-3 pts = ~52-57% baseline. GAP 4-6 pts = ~57-62%. GAP 6+ pts = ~62%+. Apply all standard rule modifiers. If adjusted underdog cover probability reaches 62%+: HIGH CONFIDENCE UNDERDOG COVER — 1.5 units. If 57-61%: UNDERDOG COVER — 1 unit. Below 57%: PASS both sides. Rule 32 does NOT override Rule 20.
+- CONFIDENCE AND UNIT SIZING: Below 57% = PASS (0 units). 57-61% = RECOMMENDED (1 unit). 62%+ = HIGH CONFIDENCE (1.5 units). Rule 20 active + 57%+ = HIGH CONFIDENCE (1 unit). Rule 32 gap 3+ + 57%+ = HIGH CONFIDENCE (1.5 units). Rule 20 AND Rule 32 both active = HIGH CONFIDENCE (2 units). Always state unit size with every pick.
+- DUAL BEST BETS: Issue a Best Bet for EVERY market that independently clears 57%. Do NOT limit to one pick. Spread and total are evaluated independently. Label clearly as BEST BET — SPREAD and BEST BET — TOTAL.
+- Model the FLOOR scenario (Rule 9) for volatile scorers.
 - Apply Rule 25 ASYMMETRICALLY: neutralize fatigue if both teams played prior night.
-- Pull actual box scores, not just game summaries
-- Check BENCH WILDCARD ceilings (Rule 17) for every player on both rosters
-- Check TURNOVER CEILINGS (Rule 18)
+- Pull actual box scores, not just game summaries.
+- Check BENCH WILDCARD ceilings (Rule 17) for every player on both rosters.
+- Check TURNOVER CEILINGS (Rule 18).
 - Check FREE THROW GENERATION (Rule 19) with Rule 30 context check. Apply Rule 31 FTA adjustment when absorbing player is under high usage.
-- Apply SHOOTING EFFICIENCY DISCOUNT (Rule 22) for all lower-extremity injuries
-- Apply ROLE-SHIFT MODELING (Rule 24) for injured guards and wings
-- Apply TOURNAMENT FAVORITE ATS DISCOUNT (Rule 21) for split-series favorites laying 4-8 pts in tournament games
-- Apply HOME COURT H2H DISCOUNT (Rule 23) — 45% margin discount
-- Do NOT use ATS season records as a scoring factor
-- Do NOT use desperation/motivation as primary pick driver — cap at +0.5 pts
-- Explicitly calculate paint-point differential — do not skip Rule 8
-- Always run the Total Range Model (6 scenarios in v6) before any over/under pick
-- Spread confidence below 55% after all adjustments = PASS, not forced pick
-- Run Rule 26 Consistency Gate before every final output
-- Run Rule 27 Pre-Check BEFORE naming the Best Bet — not after
-- The model has a structural favorite bias built into the 11-factor scoring system. Rule 32 exists specifically to correct this. Always run it. Always state the GAP. Always evaluate the underdog side affirmatively — do not treat PASS on the favorite as equivalent to no bet existing.
+- Apply SHOOTING EFFICIENCY DISCOUNT (Rule 22) for all lower-extremity injuries.
+- Apply ROLE-SHIFT MODELING (Rule 24) for injured guards and wings.
+- Apply TOURNAMENT FAVORITE ATS DISCOUNT (Rule 21) for split-series favorites laying 4-8 pts in tournament games.
+- Apply HOME COURT H2H DISCOUNT (Rule 23) — 45% margin discount.
+- Do NOT use ATS season records as a scoring factor.
+- Do NOT use desperation/motivation as primary pick driver — cap at +0.5 pts.
+- Explicitly calculate paint-point differential — do not skip Rule 8.
+- Always run the Total Range Model (6 scenarios) before any over/under pick.
+- Run Rule 26 Consistency Gate before every final output.
+- Run Rule 27 Pre-Check BEFORE naming any Best Bet — not after.
+- The model has a structural favorite bias built into the 11-factor scoring system. Rule 32 exists specifically to correct this. Always run it. Always state the GAP. Always evaluate the underdog side affirmatively.
 
 """
 
 # ─────────────────────────────────────────────────────────────
-# SETTINGS — adjust these as needed
+# BATCH PROMPT — same as full prompt
 # ─────────────────────────────────────────────────────────────
+BATCH_MODEL_PROMPT = FULL_MODEL_PROMPT
 
-# Seconds to wait between each game analysis
-# Keeps you within Anthropic API rate limits
-# 30 seconds is safe. Lower to 15 if you want faster.
-DELAY_BETWEEN_GAMES = 30
-
-# Minimum confidence to flag as a recommended play
-# in the master summary
-# Minimum confidence for a valid recommended play
-MIN_CONFIDENCE_TO_FLAG = 55
-
-# Threshold for high confidence highlight
+# ─────────────────────────────────────────────────────────────
+# SETTINGS
+# ─────────────────────────────────────────────────────────────
+DELAY_BETWEEN_GAMES       = 45
+MIN_CONFIDENCE_TO_FLAG    = 57
 HIGH_CONFIDENCE_THRESHOLD = 62
+SPORT                     = "NCAAMB"
+SPORT_KEY                 = "basketball_ncaab"
 
-# Rule 32 gap threshold for starring plays
-RULE32_STAR_GAP = 3.0
+
+# ─────────────────────────────────────────────────────────────
+# HELPER FUNCTIONS
+# ─────────────────────────────────────────────────────────────
+def _is_high_confidence(result):
+    """
+    A play qualifies as high confidence if:
+    - Primary best bet confidence >= 62%
+    - OR secondary best bet confidence >= 62%
+    - OR Rule 32 gap >= 3 pts with either confidence >= 57%
+    - OR Rule 20 active with either confidence >= 57%
+    """
+    picks = result.get("picks", {})
+    conf  = picks.get("best_bet_confidence", 0)
+    conf2 = picks.get("best_bet_2_confidence", 0)
+
+    if isinstance(conf, int) and conf >= HIGH_CONFIDENCE_THRESHOLD:
+        return True
+    if isinstance(conf2, int) and conf2 >= HIGH_CONFIDENCE_THRESHOLD:
+        return True
+
+    try:
+        gap = float(
+            str(picks.get("rule32_gap", 0)).replace("—","0") or 0)
+        if gap >= RULE32_STAR_GAP:
+            if isinstance(conf, int) and conf >= 57:
+                return True
+            if isinstance(conf2, int) and conf2 >= 57:
+                return True
+    except (ValueError, TypeError):
+        pass
+
+    if picks.get("rule20_active"):
+        if isinstance(conf, int) and conf >= 57:
+            return True
+        if isinstance(conf2, int) and conf2 >= 57:
+            return True
+
+    return False
 
 
-# Sport to analyze
-SPORT = "NCAAMB"
-SPORT_KEY = "basketball_ncaab"
+def _is_recommended(result):
+    """
+    A play is recommended (57-61%) but not high confidence.
+    """
+    picks = result.get("picks", {})
+    conf  = picks.get("best_bet_confidence", 0)
+    conf2 = picks.get("best_bet_2_confidence", 0)
+
+    has_recommended = (
+        (isinstance(conf, int) and
+         MIN_CONFIDENCE_TO_FLAG <= conf < HIGH_CONFIDENCE_THRESHOLD) or
+        (isinstance(conf2, int) and
+         MIN_CONFIDENCE_TO_FLAG <= conf2 < HIGH_CONFIDENCE_THRESHOLD)
+    )
+
+    return has_recommended and not _is_high_confidence(result)
 
 
 def get_todays_games(target_date_str=None):
@@ -607,11 +665,12 @@ def get_todays_games(target_date_str=None):
     target_date_str format: 'March 15, 2026'
     If None, uses today's date.
     """
-    url = f"https://api.the-odds-api.com/v4/sports/{SPORT_KEY}/odds"
+    url = (f"https://api.the-odds-api.com/v4/sports/"
+           f"{SPORT_KEY}/odds")
     params = {
-        "apiKey": ODDS_API_KEY,
-        "regions": "us",
-        "markets": "spreads,totals,h2h",
+        "apiKey":     ODDS_API_KEY,
+        "regions":    "us",
+        "markets":    "spreads,totals,h2h",
         "oddsFormat": "american",
         "bookmakers": "draftkings,fanduel,betmgm"
     }
@@ -630,14 +689,11 @@ def get_todays_games(target_date_str=None):
         for game in data:
             commence = game.get("commence_time", "")
 
-            # Filter by date if provided
             if target_date_str:
                 try:
                     game_dt = datetime.fromisoformat(
                         commence.replace("Z", "+00:00"))
                     game_date_str = game_dt.strftime("%B %d, %Y")
-                    # Remove leading zero from day
-                    # e.g. "March 05" becomes "March 5"
                     game_date_clean = game_date_str.replace(
                         " 0", " ").strip()
                     target_clean = target_date_str.replace(
@@ -650,10 +706,9 @@ def get_todays_games(target_date_str=None):
             home = game.get("home_team", "Unknown")
             away = game.get("away_team", "Unknown")
 
-            # Extract lines
             spread_info = "No line available"
-            total_info = "No total available"
-            ml_info = "No ML available"
+            total_info  = "No total available"
+            ml_info     = "No ML available"
 
             for bookmaker in game.get("bookmakers", []):
                 if bookmaker.get("title") == "DraftKings":
@@ -677,17 +732,18 @@ def get_todays_games(target_date_str=None):
                             for outcome in market.get("outcomes", []):
                                 if outcome["name"] == home:
                                     ml_info = (
-                                        f"{home} ML {outcome['price']:+d}"
+                                        f"{home} ML "
+                                        f"{outcome['price']:+d}"
                                     )
 
             games.append({
-                "home_team": home,
-                "away_team": away,
+                "home_team":     home,
+                "away_team":     away,
                 "commence_time": commence,
-                "spread": spread_info,
-                "total": total_info,
-                "moneyline": ml_info,
-                "raw": game
+                "spread":        spread_info,
+                "total":         total_info,
+                "moneyline":     ml_info,
+                "raw":           game
             })
 
         print(f"Found {len(games)} games.")
@@ -699,16 +755,12 @@ def get_todays_games(target_date_str=None):
 
 
 def format_game_data_for_analysis(game, target_date):
-    """
-    Format a single game's data into the structure
-    expected by run_analysis()
-    """
     return {
-        "team1": game["away_team"],
-        "team2": game["home_team"],
-        "sport": SPORT,
-        "game_date": target_date,
-        "context": "NCAA Men's Basketball",
+        "team1":          game["away_team"],
+        "team2":          game["home_team"],
+        "sport":          SPORT,
+        "game_date":      target_date,
+        "context":        "NCAA Men's Basketball",
         "betting_lines": (
             f"Game: {game['away_team']} @ {game['home_team']}\n"
             f"Commence: {game['commence_time']}\n"
@@ -720,22 +772,18 @@ def format_game_data_for_analysis(game, target_date):
     }
 
 
-def generate_master_summary_pdf(all_results, target_date, output_dir="reports"):
-    """
-    Generate a single master PDF showing all picks
-    from the batch run side by side.
-    """
+def generate_master_summary_pdf(all_results, target_date,
+                                 output_dir="reports"):
     os.makedirs(output_dir, exist_ok=True)
-    date_str = target_date.replace("/", "-").replace(" ", "_")
+    date_str = target_date.replace("/","-").replace(" ","_")
     filename = f"{output_dir}/MASTER_SUMMARY_{date_str}.pdf"
 
     doc = SimpleDocTemplate(
         filename, pagesize=letter,
         rightMargin=0.5*inch, leftMargin=0.5*inch,
-        topMargin=0.5*inch, bottomMargin=0.5*inch
+        topMargin=0.5*inch,  bottomMargin=0.5*inch
     )
 
-    # Colors
     NAVY   = colors.HexColor("#0D2240")
     GOLD   = colors.HexColor("#C8A951")
     GREEN  = colors.HexColor("#1A7A3E")
@@ -744,10 +792,8 @@ def generate_master_summary_pdf(all_results, target_date, output_dir="reports"):
     MGRAY  = colors.HexColor("#888888")
     DGRAY  = colors.HexColor("#333333")
     LGREEN = colors.HexColor("#E8F8E8")
-    LRED   = colors.HexColor("#FFE0E0")
     YELLOW = colors.HexColor("#FFFBE6")
     ORANGE = colors.HexColor("#E07000")
-    LBLUE  = colors.HexColor("#D6E4F0")
 
     def PS(name, **kw):
         s = ParagraphStyle(name)
@@ -760,61 +806,60 @@ def generate_master_summary_pdf(all_results, target_date, output_dir="reports"):
 
     def safe(text):
         return (str(text or "—")
-                .replace('&', '&amp;')
-                .replace('<', '&lt;')
-                .replace('>', '&gt;'))
+                .replace('&','&amp;')
+                .replace('<','&lt;')
+                .replace('>','&gt;'))
 
     story = []
 
     # ── HEADER ──
     story.append(Paragraph(
-        "SPORTS BETTING ANALYZER — MASTER SUMMARY",
+        "KAPERNICUS PICKS — MASTER SUMMARY",
         PS("H", fontSize=18, fontName="Helvetica-Bold",
            textColor=NAVY, alignment=TA_CENTER, spaceAfter=4)))
-
     story.append(Paragraph(
         f"NCAA Men's Basketball | {target_date}",
         PS("ST", fontSize=11, textColor=MGRAY,
            alignment=TA_CENTER, spaceAfter=4)))
-
     story.append(Paragraph(
-        f"Generated: {datetime.now().strftime('%B %d, %Y %I:%M %p')} | "
+        f"Generated: "
+        f"{datetime.now().strftime('%B %d, %Y %I:%M %p')} | "
         f"Games analyzed: {len(all_results)}",
         PS("DT", fontSize=9, textColor=MGRAY,
            alignment=TA_CENTER, spaceAfter=10)))
-
     story.append(HRFlowable(
         width="100%", thickness=2,
         color=NAVY, spaceAfter=12))
 
-    # ── BEST BETS SECTION ──
-    # Filter for high-confidence plays
-    best_bets = []
-    for result in all_results:
-        picks = result.get("picks", {})
-        bb_conf = picks.get("best_bet_confidence", 0)
-        if isinstance(bb_conf, int) and bb_conf >= MIN_CONFIDENCE_TO_FLAG:
-            best_bets.append(result)
+    # ── HIGH CONFIDENCE PLAYS ──
+    high_conf_results = [r for r in all_results
+                         if _is_high_confidence(r)]
+    rec_results       = [r for r in all_results
+                         if _is_recommended(r)]
 
-    if best_bets:
+    if high_conf_results:
         story.append(Paragraph(
-            f"★  HIGH CONFIDENCE PLAYS  ({len(best_bets)} found)",
+            f"★★  HIGH CONFIDENCE PLAYS  "
+            f"({len(high_conf_results)} found)",
             PS("BBH", fontSize=13, fontName="Helvetica-Bold",
                textColor=colors.white, backColor=GREEN,
                alignment=TA_CENTER, borderPad=6,
                spaceAfter=8, leading=20)))
 
-        bb_data = [["GAME", "BEST BET", "CONFIDENCE",
+        # Table now has Best Bet 1 AND Best Bet 2 columns
+        bb_data = [["GAME", "BEST BET 1",
+                    "BEST BET 2",
                     "SPREAD", "TOTAL", "FLAGS"]]
 
         for result in sorted(
-            best_bets,
+            high_conf_results,
             key=lambda x: x.get("picks", {}).get(
                 "best_bet_confidence", 0),
             reverse=True
         ):
             picks = result.get("picks", {})
-            game = result.get("game_label", "Unknown")
+            game  = result.get("game_label", "Unknown")
+
             flags = []
             if picks.get("rule20_active"):
                 flags.append("R20")
@@ -823,16 +868,35 @@ def generate_master_summary_pdf(all_results, target_date, output_dir="reports"):
             try:
                 gap = float(str(
                     picks.get("rule32_gap", 0)
-                ).replace("—", "0") or 0)
+                ).replace("—","0") or 0)
                 if gap >= 2:
                     flags.append(f"R32({gap})")
             except (ValueError, TypeError):
                 pass
 
+            conf1  = picks.get("best_bet_confidence", 0)
+            units1 = format_unit_label(
+                conf1 if isinstance(conf1, int) else 0, picks)
+            bb1    = (f"{safe(str(picks.get('best_bet','—'))[:28])}"
+                      f" ({conf1}% {units1})")
+
+            bb2    = picks.get("best_bet_2", "PASS")
+            conf2  = picks.get("best_bet_2_confidence", 0)
+            bm2    = picks.get("best_bet_2_market", "")
+            units2 = format_unit_label(
+                conf2 if isinstance(conf2, int) else 0, picks)
+
+            if (str(bb2).upper() != "PASS" and bb2 != "—"
+                    and isinstance(conf2, int) and conf2 >= 57):
+                bb2_str = (f"{safe(str(bb2)[:22])}"
+                           f" ({conf2}% {units2})")
+            else:
+                bb2_str = "—"
+
             bb_data.append([
                 safe(game),
-                safe(picks.get("best_bet", "—"))[:35],
-                f"{picks.get('best_bet_confidence', '—')}%",
+                bb1,
+                bb2_str,
                 safe(f"{picks.get('spread_pick','—')} "
                      f"{picks.get('spread_line','—')}"),
                 safe(f"{picks.get('total_pick','—')} "
@@ -842,26 +906,97 @@ def generate_master_summary_pdf(all_results, target_date, output_dir="reports"):
 
         bb_table = Table(
             bb_data,
-            colWidths=[1.4*inch, 1.8*inch, 0.85*inch,
-                       1.1*inch, 1.0*inch, 0.85*inch]
+            colWidths=[1.1*inch, 1.5*inch, 1.5*inch,
+                       0.95*inch, 0.9*inch, 0.85*inch]
         )
         bb_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8.5),
-            ('BACKGROUND', (0, 0), (-1, 0), NAVY),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('GRID', (0, 0), (-1, -1), 0.4, MGRAY),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-            ('LEFTPADDING', (0, 0), (-1, -1), 5),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1),
+            ('FONTNAME',  (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE',  (0,0), (-1,-1), 8),
+            ('BACKGROUND',(0,0), (-1,0), NAVY),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('GRID',      (0,0), (-1,-1), 0.4, MGRAY),
+            ('VALIGN',    (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING',    (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('LEFTPADDING',   (0,0), (-1,-1), 4),
+            ('ROWBACKGROUNDS',(0,1), (-1,-1),
              [LGREEN, colors.HexColor("#D4EDDA")]),
         ]))
         story.append(bb_table)
-        story.append(Spacer(1, 16))
+        story.append(Spacer(1, 12))
 
-    # ── ACTIVE RULE FLAGS SUMMARY ──
+    # ── RECOMMENDED PLAYS ──
+    if rec_results:
+        story.append(Paragraph(
+            f"★  RECOMMENDED PLAYS  ({len(rec_results)} found)",
+            PS("RH", fontSize=12, fontName="Helvetica-Bold",
+               textColor=colors.white,
+               backColor=colors.HexColor("#856404"),
+               alignment=TA_CENTER, borderPad=5,
+               spaceAfter=6, leading=18)))
+
+        rec_data = [["GAME", "BEST BET 1",
+                     "BEST BET 2", "SPREAD", "TOTAL"]]
+
+        for result in sorted(
+            rec_results,
+            key=lambda x: x.get("picks", {}).get(
+                "best_bet_confidence", 0),
+            reverse=True
+        ):
+            picks = result.get("picks", {})
+            game  = result.get("game_label", "Unknown")
+
+            conf1  = picks.get("best_bet_confidence", 0)
+            units1 = format_unit_label(
+                conf1 if isinstance(conf1, int) else 0, picks)
+            bb1    = (f"{safe(str(picks.get('best_bet','—'))[:28])}"
+                      f" ({conf1}% {units1})")
+
+            bb2   = picks.get("best_bet_2", "PASS")
+            conf2 = picks.get("best_bet_2_confidence", 0)
+            units2= format_unit_label(
+                conf2 if isinstance(conf2, int) else 0, picks)
+
+            if (str(bb2).upper() != "PASS" and bb2 != "—"
+                    and isinstance(conf2, int) and conf2 >= 57):
+                bb2_str = (f"{safe(str(bb2)[:22])}"
+                           f" ({conf2}% {units2})")
+            else:
+                bb2_str = "—"
+
+            rec_data.append([
+                safe(game),
+                bb1,
+                bb2_str,
+                safe(f"{picks.get('spread_pick','—')} "
+                     f"{picks.get('spread_line','—')}"),
+                safe(f"{picks.get('total_pick','—')} "
+                     f"{picks.get('total_line','—')}"),
+            ])
+
+        rec_table = Table(
+            rec_data,
+            colWidths=[1.1*inch, 1.6*inch, 1.6*inch,
+                       1.0*inch, 0.95*inch]
+        )
+        rec_table.setStyle(TableStyle([
+            ('FONTNAME',  (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE',  (0,0), (-1,-1), 8),
+            ('BACKGROUND',(0,0), (-1,0), NAVY),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('GRID',      (0,0), (-1,-1), 0.4, MGRAY),
+            ('VALIGN',    (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING',    (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('LEFTPADDING',   (0,0), (-1,-1), 4),
+            ('ROWBACKGROUNDS',(0,1), (-1,-1),
+             [YELLOW, colors.HexColor("#FFF3CD")]),
+        ]))
+        story.append(rec_table)
+        story.append(Spacer(1, 12))
+
+    # ── ACTIVE RULE FLAGS ──
     r20_games = [r for r in all_results
                  if r.get("picks", {}).get("rule20_active")]
     r31_games = [r for r in all_results
@@ -875,29 +1010,27 @@ def generate_master_summary_pdf(all_results, target_date, output_dir="reports"):
                alignment=TA_CENTER, borderPad=5,
                spaceAfter=6, leading=18)))
 
-        if r20_games:
-            for r in r20_games:
-                story.append(Paragraph(
-                    f"⚑  RULE 20 SHARP FADE — "
-                    f"{safe(r.get('game_label','Unknown'))}",
-                    PS(f"R20{r.get('game_label','')}",
-                       fontSize=9, fontName="Helvetica-Bold",
-                       textColor=colors.white, backColor=RED,
-                       borderPad=4, spaceAfter=3, leading=14)))
+        for r in r20_games:
+            story.append(Paragraph(
+                f"⚑  RULE 20 SHARP FADE — "
+                f"{safe(r.get('game_label','Unknown'))}",
+                PS(f"R20g{id(r)}",
+                   fontSize=9, fontName="Helvetica-Bold",
+                   textColor=colors.white, backColor=RED,
+                   borderPad=4, spaceAfter=3, leading=14)))
 
-        if r31_games:
-            for r in r31_games:
-                story.append(Paragraph(
-                    f"⚑  RULE 31 STAR ABSORPTION — "
-                    f"{safe(r.get('game_label', 'Unknown'))}",
-                    PS(f"R31{r.get('game_label','')}",
-                       fontSize=9, fontName="Helvetica-Bold",
-                       textColor=colors.white, backColor=ORANGE,
-                       borderPad=4, spaceAfter=3, leading=14)))
+        for r in r31_games:
+            story.append(Paragraph(
+                f"⚑  RULE 31 STAR ABSORPTION — "
+                f"{safe(r.get('game_label','Unknown'))}",
+                PS(f"R31g{id(r)}",
+                   fontSize=9, fontName="Helvetica-Bold",
+                   textColor=colors.white, backColor=ORANGE,
+                   borderPad=4, spaceAfter=3, leading=14)))
 
         story.append(Spacer(1, 12))
 
-    # ── FULL GAME-BY-GAME TABLE ──
+    # ── ALL GAMES TABLE ──
     story.append(Paragraph(
         "ALL GAMES",
         PS("AGH", fontSize=11, fontName="Helvetica-Bold",
@@ -906,15 +1039,24 @@ def generate_master_summary_pdf(all_results, target_date, output_dir="reports"):
            spaceAfter=6, leading=18)))
 
     table_data = [
-        ["GAME", "SPREAD PICK", "CONF",
-         "TOTAL PICK", "CONF", "BEST BET", "SCORE"]
+        ["GAME", "SPREAD", "CONF",
+         "TOTAL", "CONF", "BEST BET 1", "BEST BET 2"]
     ]
 
     for result in all_results:
         picks = result.get("picks", {})
-        game = result.get("game_label", "Unknown")
-        sc = picks.get("spread_confidence", "—")
-        tc = picks.get("total_confidence", "—")
+        game  = result.get("game_label", "Unknown")
+        sc    = picks.get("spread_confidence", "—")
+        tc    = picks.get("total_confidence", "—")
+
+        bb2     = picks.get("best_bet_2", "PASS")
+        conf2   = picks.get("best_bet_2_confidence", 0)
+        units2  = format_unit_label(
+            conf2 if isinstance(conf2, int) else 0, picks)
+        bb2_disp = "—"
+        if (str(bb2).upper() != "PASS" and bb2 != "—"
+                and isinstance(conf2, int) and conf2 >= 57):
+            bb2_disp = f"{safe(str(bb2)[:20])} ({conf2}%)"
 
         table_data.append([
             safe(game),
@@ -924,61 +1066,41 @@ def generate_master_summary_pdf(all_results, target_date, output_dir="reports"):
             safe(f"{picks.get('total_pick','—')} "
                  f"{picks.get('total_line','—')}"),
             f"{tc}%" if isinstance(tc, int) else "—",
-            safe(str(picks.get("best_bet", "—"))[:30]),
-            safe(picks.get("predicted_score", "—"))
+            safe(str(picks.get("best_bet","—"))[:25]),
+            bb2_disp
         ])
 
-    def row_bg(i, picks_list):
-        if i == 0:
-            return NAVY
-        picks = picks_list[i - 1].get("picks", {})
-        bb_conf = picks.get("best_bet_confidence", 0)
-        if isinstance(bb_conf, int) and bb_conf >= MIN_CONFIDENCE_TO_FLAG:
-            return LGREEN
-        rec = str(picks.get("spread_recommendation", "")).upper()
-        if "PASS" in rec:
-            return YELLOW
-        return colors.white if i % 2 == 0 else LGRAY
-
-    full_table = Table(
-        table_data,
-        colWidths=[1.3*inch, 1.2*inch, 0.45*inch,
-                   1.1*inch, 0.45*inch, 1.5*inch, 1.0*inch]
-    )
-
     row_styles = [
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 8),
-        ('BACKGROUND', (0, 0), (-1, 0), NAVY),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('GRID', (0, 0), (-1, -1), 0.3, MGRAY),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ('LEFTPADDING', (0, 0), (-1, -1), 4),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1),
+        ('FONTNAME',  (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE',  (0,0), (-1,-1), 7.5),
+        ('BACKGROUND',(0,0), (-1,0), NAVY),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('GRID',      (0,0), (-1,-1), 0.3, MGRAY),
+        ('VALIGN',    (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING',    (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('LEFTPADDING',   (0,0), (-1,-1), 3),
+        ('ROWBACKGROUNDS',(0,1), (-1,-1),
          [colors.white, LGRAY]),
     ]
 
-    # Highlight high confidence rows green
     for i, result in enumerate(all_results, start=1):
-        picks = result.get("picks", {})
+        picks   = result.get("picks", {})
         bb_conf = picks.get("best_bet_confidence", 0)
-        if isinstance(bb_conf, int) and bb_conf >= MIN_CONFIDENCE_TO_FLAG:
+        if _is_high_confidence(result):
             row_styles.append(
-                ('BACKGROUND', (0, i), (-1, i), LGREEN))
+                ('BACKGROUND', (0,i), (-1,i), LGREEN))
             row_styles.append(
-                ('FONTNAME', (0, i), (-1, i), 'Helvetica-Bold'))
+                ('FONTNAME', (0,i), (-1,i), 'Helvetica-Bold'))
+        elif _is_recommended(result):
+            row_styles.append(
+                ('BACKGROUND', (0,i), (-1,i), YELLOW))
 
-        # Flag PASS rows yellow
-        rec = str(picks.get("spread_recommendation", "")).upper()
-        if "PASS" in rec and not (
-            isinstance(bb_conf, int) and
-            bb_conf >= MIN_CONFIDENCE_TO_FLAG
-        ):
-            row_styles.append(
-                ('BACKGROUND', (0, i), (-1, i), YELLOW))
-
+    full_table = Table(
+        table_data,
+        colWidths=[1.1*inch, 1.0*inch, 0.4*inch,
+                   0.95*inch, 0.4*inch, 1.1*inch, 1.1*inch]
+    )
     full_table.setStyle(TableStyle(row_styles))
     story.append(full_table)
     story.append(Spacer(1, 20))
@@ -989,29 +1111,32 @@ def generate_master_summary_pdf(all_results, target_date, output_dir="reports"):
         color=MGRAY, spaceAfter=8))
 
     total_games = len(all_results)
-    high_conf = len(best_bets)
-    r20_count = len(r20_games)
-    r31_count = len(r31_games)
-    pass_count = sum(
+    r20_count   = len(r20_games)
+    r31_count   = len(r31_games)
+    pass_count  = sum(
         1 for r in all_results
         if "PASS" in str(
-            r.get("picks", {}).get(
-                "spread_recommendation", "")).upper()
+            r.get("picks",{}).get(
+                "spread_recommendation","")).upper()
+    )
+    r32_count = sum(
+        1 for r in all_results
+        if float(str(r.get("picks",{}).get(
+            "rule32_gap",0)).replace("—","0") or 0) >= 2
     )
 
     stats_data = [
         ["BATCH STATISTICS", "", "", ""],
         ["Total Games Analyzed", str(total_games),
          "Sharp Fade (Rule 20)", str(r20_count)],
-        [f"High Confidence (≥{MIN_CONFIDENCE_TO_FLAG}%)",
-         str(high_conf),
+        [f"High Confidence ({HIGH_CONFIDENCE_THRESHOLD}%+)",
+         str(len(high_conf_results)),
          "Star Absorption (Rule 31)", str(r31_count)],
-        ["Spread PASS Count", str(pass_count),
-         "Line Exceeds Model (Rule 32)",
-         str(sum(1 for r in all_results
-                 if float(str(r.get("picks", {}).get(
-                     "rule32_gap", 0)).replace(
-                         "—", "0") or 0) >= 2))],
+        [f"Recommended ({MIN_CONFIDENCE_TO_FLAG}-"
+         f"{HIGH_CONFIDENCE_THRESHOLD-1}%)",
+         str(len(rec_results)),
+         "Line Exceeds Model (Rule 32)", str(r32_count)],
+        ["Spread PASS Count", str(pass_count), "", ""],
     ]
 
     stats_table = Table(
@@ -1019,18 +1144,18 @@ def generate_master_summary_pdf(all_results, target_date, output_dir="reports"):
         colWidths=[2.2*inch, 0.8*inch, 2.2*inch, 0.8*inch]
     )
     stats_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ('BACKGROUND', (0, 0), (-1, 0), NAVY),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('SPAN', (0, 0), (-1, 0)),
-        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-        ('GRID', (0, 0), (-1, -1), 0.3, MGRAY),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1),
+        ('FONTNAME',  (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE',  (0,0), (-1,-1), 9),
+        ('BACKGROUND',(0,0), (-1,0), NAVY),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('SPAN',      (0,0), (-1,0)),
+        ('ALIGN',     (0,0), (-1,0), 'CENTER'),
+        ('GRID',      (0,0), (-1,-1), 0.3, MGRAY),
+        ('ROWBACKGROUNDS',(0,1), (-1,-1),
          [colors.white, LGRAY]),
-        ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING',    (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('LEFTPADDING',   (0,0), (-1,-1), 6),
     ]))
     story.append(stats_table)
     story.append(Spacer(1, 10))
@@ -1056,7 +1181,6 @@ def generate_master_summary_pdf(all_results, target_date, output_dir="reports"):
 
 
 def save_batch_log(all_results, target_date):
-    """Save all picks from this batch run to picks_log.json"""
     log_file = "picks_log.json"
     existing = []
 
@@ -1069,9 +1193,12 @@ def save_batch_log(all_results, target_date):
 
     for result in all_results:
         picks = result.get("picks", {})
+        conf  = picks.get("best_bet_confidence", 0)
+        conf2 = picks.get("best_bet_2_confidence", 0)
+
         entry = {
             "date":                  target_date,
-            "game":                  result.get("game_label", "Unknown"),
+            "game":                  result.get("game_label","Unknown"),
             "sport":                 SPORT,
             "context":               "NCAA Men's Basketball",
             "spread_pick":           picks.get("spread_pick"),
@@ -1082,13 +1209,22 @@ def save_batch_log(all_results, target_date):
             "total_line":            picks.get("total_line"),
             "total_confidence":      picks.get("total_confidence"),
             "best_bet":              picks.get("best_bet"),
-            "best_bet_confidence":   picks.get("best_bet_confidence"),
+            "best_bet_confidence":   conf,
+            "best_bet_units":        get_unit_size(
+                conf if isinstance(conf,int) else 0, picks),
+            "best_bet_tier":         get_tier_label(
+                conf if isinstance(conf,int) else 0, picks),
+            "best_bet_2":            picks.get("best_bet_2","PASS"),
+            "best_bet_2_confidence": conf2,
+            "best_bet_2_market":     picks.get("best_bet_2_market",""),
+            "best_bet_2_units":      get_unit_size(
+                conf2 if isinstance(conf2,int) else 0, picks),
             "predicted_score":       picks.get("predicted_score"),
             "rule20_active":         picks.get("rule20_active"),
             "rule31_active":         picks.get("rule31_active"),
             "rule32_gap":            picks.get("rule32_gap"),
             "rule32_recommendation": picks.get("rule32_recommendation"),
-            "pdf_report":            result.get("pdf_path", ""),
+            "pdf_report":            result.get("pdf_path",""),
             "result":                "PENDING",
             "batch_run":             True
         }
@@ -1101,17 +1237,7 @@ def save_batch_log(all_results, target_date):
 
 
 def run_batch(target_date=None):
-    """
-    Main batch function.
-    Analyzes every college basketball game on the target date.
-    """
-
     # ── SETUP CHECKS ──
-    if "PASTE YOUR COMPLETE" in FULL_MODEL_PROMPT:
-        print("\nERROR: Paste your 32-rule prompt into batch_analyzer.py")
-        print("Find the line that says PASTE YOUR COMPLETE 32-RULE PROMPT HERE")
-        return
-
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print("\nERROR: ANTHROPIC_API_KEY not set in Replit Secrets")
         return
@@ -1130,25 +1256,23 @@ def run_batch(target_date=None):
 
     if not games:
         print(f"\nNo games found for {target_date}.")
-        print("This could mean:")
         print("  1. No games scheduled for that date")
-        print("  2. Lines not yet posted (check back closer to game time)")
-        print("  3. The Odds API key needs to be checked")
+        print("  2. Lines not yet posted")
+        print("  3. Check Odds API key")
         return
 
     print(f"\nFound {len(games)} games to analyze.")
     print("="*60)
 
-    # Show the game list before starting
     print("\nGames queued for analysis:")
     for i, game in enumerate(games, 1):
         print(f"  {i}. {game['away_team']} @ {game['home_team']}")
         print(f"     Spread: {game['spread']}")
         print(f"     Total:  {game['total']}")
 
-    # Estimate time
     est_minutes = (len(games) * (90 + DELAY_BETWEEN_GAMES)) / 60
-    print(f"\nEstimated time: {est_minutes:.0f}-{est_minutes*1.3:.0f} minutes")
+    print(f"\nEstimated time: "
+          f"{est_minutes:.0f}-{est_minutes*1.3:.0f} minutes")
     print("Keep this tab open and your iPad plugged in.")
     print("\nStarting analysis in 5 seconds...")
     time.sleep(5)
@@ -1157,50 +1281,74 @@ def run_batch(target_date=None):
     all_results = []
 
     for i, game in enumerate(games, 1):
-        game_label = f"{game['away_team']} @ {game['home_team']}"
+        game_label = (f"{game['away_team']} "
+                      f"@ {game['home_team']}")
 
         print(f"\n{'='*60}")
         print(f"[{i}/{len(games)}] {game_label}")
         print(f"{'='*60}")
 
-        # Format game data
-        game_data = format_game_data_for_analysis(game, target_date)
+        game_data = format_game_data_for_analysis(
+            game, target_date)
 
-        # Run the full 32-rule analysis
         try:
-            analysis_result = run_analysis(game_data, FULL_MODEL_PROMPT)
+            import signal
 
-            if "error" in analysis_result and not analysis_result.get(
-                    "full_analysis"):
-                print(f"  ERROR analyzing {game_label}: "
-                      f"{analysis_result['error']}")
+            def timeout_handler(signum, frame):
+                raise TimeoutError(
+                    "Analysis exceeded 5 minute limit")
+
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(300)
+
+            print("  [0:00] Sending to Claude...")
+            analysis_result = run_analysis(
+                game_data, BATCH_MODEL_PROMPT)
+
+            signal.alarm(0)
+
+            if ("error" in analysis_result and
+                    not analysis_result.get("full_analysis")):
+                print(f"  ERROR: {analysis_result['error']}")
                 all_results.append({
                     "game_label": game_label,
-                    "picks": {},
-                    "error": analysis_result["error"],
-                    "pdf_path": ""
+                    "picks":      {},
+                    "error":      analysis_result["error"],
+                    "pdf_path":   ""
                 })
                 continue
 
-            # Generate individual PDF
             try:
-                pdf_path = generate_pdf_report(game_data, analysis_result)
+                pdf_path = generate_pdf_report(
+                    game_data, analysis_result)
             except Exception as e:
-                print(f"  PDF generation error: {e}")
+                print(f"  PDF error: {e}")
                 pdf_path = ""
 
             picks = analysis_result.get("picks", {})
+            conf  = picks.get("best_bet_confidence","—")
+            conf2 = picks.get("best_bet_2_confidence", 0)
 
-            # Print quick summary to console
-            print(f"  SPREAD:   {picks.get('spread_pick','—')} "
+            print(f"  SPREAD:     "
+                  f"{picks.get('spread_pick','—')} "
                   f"{picks.get('spread_line','—')} | "
                   f"{picks.get('spread_confidence','—')}% | "
                   f"{picks.get('spread_recommendation','—')}")
-            print(f"  TOTAL:    {picks.get('total_pick','—')} "
+            print(f"  TOTAL:      "
+                  f"{picks.get('total_pick','—')} "
                   f"{picks.get('total_line','—')} | "
                   f"{picks.get('total_confidence','—')}%")
-            print(f"  BEST BET: {picks.get('best_bet','—')} "
-                  f"({picks.get('best_bet_confidence','—')}%)")
+            print(f"  BEST BET 1: "
+                  f"{picks.get('best_bet','—')} ({conf}%)")
+
+            if (picks.get("best_bet_2") and
+                    str(picks.get("best_bet_2")).upper() != "PASS"
+                    and isinstance(conf2, int) and conf2 >= 57):
+                u2 = format_unit_label(conf2, picks)
+                bm2 = picks.get("best_bet_2_market","")
+                print(f"  BEST BET 2: "
+                      f"{picks.get('best_bet_2','—')} "
+                      f"({conf2}% — {u2}) [{bm2}]")
 
             if picks.get("rule20_active"):
                 print("  ⚑ RULE 20 SHARP FADE ACTIVE")
@@ -1209,29 +1357,28 @@ def run_batch(target_date=None):
 
             all_results.append({
                 "game_label": game_label,
-                "game_data": game_data,
-                "picks": picks,
-                "pdf_path": pdf_path
+                "game_data":  game_data,
+                "picks":      picks,
+                "pdf_path":   pdf_path
             })
 
         except Exception as e:
-            print(f"  Unexpected error on {game_label}: {e}")
+            print(f"  Unexpected error: {e}")
             all_results.append({
                 "game_label": game_label,
-                "picks": {},
-                "error": str(e),
-                "pdf_path": ""
+                "picks":      {},
+                "error":      str(e),
+                "pdf_path":   ""
             })
 
-        # Wait between games to respect API rate limits
         if i < len(games):
-            print(f"\n  Waiting {DELAY_BETWEEN_GAMES} seconds "
+            print(f"\n  Waiting {DELAY_BETWEEN_GAMES}s "
                   f"before next game...")
             time.sleep(DELAY_BETWEEN_GAMES)
 
     # ── GENERATE MASTER SUMMARY ──
     print(f"\n{'='*60}")
-    print("All games analyzed. Generating master summary PDF...")
+    print("All games analyzed. Generating master summary...")
     master_pdf = generate_master_summary_pdf(
         all_results, target_date)
 
@@ -1244,46 +1391,79 @@ def run_batch(target_date=None):
     from emailer import send_batch_summary
     send_batch_summary(all_results, target_date, master_pdf)
 
+    # ── POST TO X ──
+    from twitter_poster import post_picks_from_batch
+    posted_picks = post_picks_from_batch(
+        all_results, target_date)
+
+    # ── UPDATE TRACKER ──
+    if posted_picks:
+        from tracker import add_posted_picks
+        add_posted_picks(posted_picks)
+
 
     # ── FINAL CONSOLE SUMMARY ──
     print(f"\n{'='*60}")
     print("   BATCH COMPLETE")
     print(f"{'='*60}")
-    print(f"  Games analyzed:    {len(all_results)}")
-    print(f"  Successful:        "
+    print(f"  Games analyzed: {len(all_results)}")
+    print(f"  Successful:     "
           f"{sum(1 for r in all_results if r.get('picks'))}")
-    print(f"  Errors:            "
+    print(f"  Errors:         "
           f"{sum(1 for r in all_results if r.get('error'))}")
-    print(f"\n  High confidence plays (≥{MIN_CONFIDENCE_TO_FLAG}%):")
 
-    high_conf = [
-        r for r in all_results
-        if isinstance(
-            r.get("picks", {}).get("best_bet_confidence"), int
-        ) and r["picks"]["best_bet_confidence"] >= MIN_CONFIDENCE_TO_FLAG
-    ]
+    hc = [r for r in all_results if _is_high_confidence(r)]
+    rc = [r for r in all_results if _is_recommended(r)]
 
-    if high_conf:
-        for r in sorted(
-            high_conf,
-            key=lambda x: x["picks"]["best_bet_confidence"],
-            reverse=True
-        ):
-            print(f"    ★ {r['game_label']}")
-            print(f"      {r['picks'].get('best_bet','—')} "
-                  f"({r['picks'].get('best_bet_confidence','—')}%)")
-    else:
-        print(f"    None above {MIN_CONFIDENCE_TO_FLAG}% threshold")
+    print(f"\n  High confidence plays "
+          f"({HIGH_CONFIDENCE_THRESHOLD}%+): {len(hc)}")
+    for r in sorted(
+        hc,
+        key=lambda x: x["picks"].get(
+            "best_bet_confidence", 0),
+        reverse=True
+    ):
+        p     = r["picks"]
+        conf  = p.get("best_bet_confidence", 0)
+        units = format_unit_label(conf, p)
+        tier  = get_tier_label(conf, p)
+        print(f"    ★★ {r['game_label']}")
+        print(f"       BB1: {p.get('best_bet','—')} "
+              f"({conf}% — {tier} — {units})")
+        bb2  = p.get("best_bet_2","PASS")
+        bc2  = p.get("best_bet_2_confidence", 0)
+        bm2  = p.get("best_bet_2_market","")
+        if (str(bb2).upper() != "PASS" and
+                isinstance(bc2, int) and bc2 >= 57):
+            u2 = format_unit_label(bc2, p)
+            t2 = get_tier_label(bc2, p)
+            print(f"       BB2: {bb2} "
+                  f"({bc2}% — {t2} — {u2}) [{bm2}]")
+
+    print(f"\n  Recommended plays "
+          f"({MIN_CONFIDENCE_TO_FLAG}-"
+          f"{HIGH_CONFIDENCE_THRESHOLD-1}%): {len(rc)}")
+    for r in sorted(
+        rc,
+        key=lambda x: x["picks"].get(
+            "best_bet_confidence", 0),
+        reverse=True
+    ):
+        p     = r["picks"]
+        conf  = p.get("best_bet_confidence", 0)
+        units = format_unit_label(conf, p)
+        print(f"    ★  {r['game_label']}")
+        print(f"       BB1: {p.get('best_bet','—')} "
+              f"({conf}% — {units})")
 
     print(f"\n  Master summary PDF: {master_pdf}")
-    print("  Download from the reports/ folder in the file panel.")
+    print("  Download from reports/ folder.")
     print(f"{'='*60}\n")
 
 
 if __name__ == "__main__":
-    # ── HOW TO USE ──
-    # Option 1: Analyze today's games automatically
-    # run_batch()
+    # Option 1: Analyze today's games
+    run_batch()
 
     # Option 2: Analyze a specific date — uncomment and edit:
-     run_batch("March 17, 2026")
+    # run_batch("March 17, 2026")

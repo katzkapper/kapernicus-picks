@@ -43,8 +43,11 @@ exact structure with no missing fields:
   "total_line": 141.5,
   "total_confidence": 70,
   "total_recommendation": "BET or PASS",
-  "best_bet": "describe the bet here",
+  "best_bet": "describe the primary best bet here",
   "best_bet_confidence": 70,
+  "best_bet_2": "describe the secondary best bet here or PASS",
+  "best_bet_2_confidence": 65,
+  "best_bet_2_market": "SPREAD or TOTAL or PASS",
   "predicted_score": "Team1 75 - Team2 67",
   "rule20_active": false,
   "rule31_active": false,
@@ -98,14 +101,32 @@ def run_analysis(game_data, full_model_prompt):
     user_message = build_user_prompt(
         game_data, full_model_prompt)
     try:
+        import threading
+
+        print("  [0:00] Request sent to Claude...")
+
+        def print_progress():
+            import time
+            intervals = [30, 60, 90, 120, 150, 180, 210, 240]
+            for seconds in intervals:
+                time.sleep(30)
+                print(f"  [{seconds//60}:{seconds%60:02d}] "
+                      f"Still waiting for Claude response...")
+
+        progress_thread = threading.Thread(
+            target=print_progress, daemon=True)
+        progress_thread.start()
+
         response = client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=16000,
             system=SYSTEM_PROMPT,
             messages=[
                 {"role": "user", "content": user_message}
-            ]
+            ],
+            timeout=300
         )
+
         full_response = response.content[0].text
         print("Analysis complete.")
         picks = extract_picks(full_response)
@@ -181,6 +202,9 @@ def extract_picks_from_text(text):
         "total_recommendation":  "See analysis",
         "best_bet":              "See full analysis",
         "best_bet_confidence":   0,
+        "best_bet_2":            "PASS",
+        "best_bet_2_confidence": 0,
+        "best_bet_2_market":     "PASS",
         "predicted_score":       "See analysis",
         "rule20_active":         False,
         "rule31_active":         False,
@@ -214,7 +238,19 @@ def extract_picks_from_text(text):
         picks["total_pick"]            = "Over"
         picks["total_recommendation"]  = "BET"
     if ("pass" in text_lower and
-            "spread" in text_lower):
-        picks["spread_recommendation"] = "PASS"
-        picks["spread_pick"]           = "PASS"
+        "spread" in text_lower):
+    picks["spread_recommendation"] = "PASS"
+    picks["spread_pick"]           = "PASS"
+
+    # Try to extract second best bet
+    bb2 = re.search(
+    r'best bet[^:]*2[^:]*:[^\n]+|'
+    r'best bet[^:]*total[:\s]+([^\n]+)|'
+    r'best bet[^:]*spread[:\s]+([^\n]+)',
+    text, re.IGNORECASE)
+    if bb2:
+    matched = bb2.group(1) or bb2.group(2) or ""
+    if matched.strip():
+        picks["best_bet_2"] = matched.strip()[:80]
+
     return picks

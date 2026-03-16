@@ -108,6 +108,15 @@ def build_html_body(game_data, picks):
             {picks.get('rule32_recommendation','—')}
         </div>"""
 
+    bb2      = picks.get("best_bet_2", "PASS")
+    bc2      = picks.get("best_bet_2_confidence", 0)
+    bm2      = picks.get("best_bet_2_market", "PASS")
+    b2_units = format_unit_label(
+        bc2 if isinstance(bc2, int) else 0, picks)
+    show_bb2 = (str(bb2).upper() != "PASS" and
+                bb2 != "—" and
+                isinstance(bc2, int) and bc2 >= 57)
+
     if str(best).upper() == "PASS" or best == "—":
         best_box = """
         <div style="background:#FFF3CD;padding:16px;
@@ -120,18 +129,40 @@ def build_html_body(game_data, picks):
                 No play meets 57% threshold</div>
         </div>"""
     else:
-        best_box = f"""
-        <div style="background:#1A7A3E;padding:16px;
+        bb2_box = ""
+        if show_bb2:
+            bb2_box = f"""
+        <div style="background:#1A5A3E;padding:14px;
                     border-radius:6px;text-align:center;
-                    margin:16px 0;">
-            <div style="font-size:11px;color:#90EE90;
+                    margin:8px 0;">
+            <div style="font-size:10px;color:#90EE90;
                         letter-spacing:2px;">
-                BEST BET</div>
-            <div style="font-size:20px;font-weight:bold;
-                        color:white;margin:6px 0;">
-                {best}</div>
-            <div style="font-size:14px;color:#90EE90;">
-                {best_conf}% — {b_units}</div>
+                BEST BET 2 — {bm2}</div>
+            <div style="font-size:17px;font-weight:bold;
+                        color:white;margin:5px 0;">
+                {bb2}</div>
+            <div style="font-size:13px;color:#90EE90;">
+                {bc2}% — {b2_units}</div>
+        </div>"""
+
+        best_box = f"""
+        <div style="margin:16px 0;">
+            <div style="background:#1A7A3E;padding:16px;
+                        border-radius:6px;
+                        text-align:center;
+                        margin-bottom:8px;">
+                <div style="font-size:11px;color:#90EE90;
+                            letter-spacing:2px;">
+                    BEST BET 1 — SPREAD/TOTAL</div>
+                <div style="font-size:20px;
+                            font-weight:bold;
+                            color:white;margin:6px 0;">
+                    {best}</div>
+                <div style="font-size:14px;
+                            color:#90EE90;">
+                    {best_conf}% — {b_units}</div>
+            </div>
+            {bb2_box}
         </div>"""
 
     return f"""
@@ -390,6 +421,17 @@ def send_batch_summary(all_results, target_date,
         conf  = p.get("best_bet_confidence", 0)
         units = format_unit_label(conf, p)
         bg    = get_row_color(conf, p)
+        bb2   = p.get("best_bet_2", "PASS")
+        bc2   = p.get("best_bet_2_confidence", 0)
+        bm2   = p.get("best_bet_2_market", "")
+        u2    = format_unit_label(
+            bc2 if isinstance(bc2, int) else 0, p)
+
+        bb2_cell = "—"
+        if (str(bb2).upper() != "PASS" and
+                isinstance(bc2, int) and bc2 >= 57):
+            bb2_cell = f"{bb2} ({bc2}% — {u2})"
+
         hc_rows += f"""
         <tr style="background:{bg};">
             <td style="padding:8px;font-weight:bold;">
@@ -398,11 +440,12 @@ def send_batch_summary(all_results, target_date,
                 {p.get('best_bet','—')}</td>
             <td style="padding:8px;text-align:center;
                        color:#1A7A3E;font-weight:bold;">
-                {conf}%</td>
+                {conf}% — {units}</td>
             <td style="padding:8px;text-align:center;
-                       color:#1A7A3E;font-weight:bold;">
-                {units}</td>
+                       color:#1A5A3E;font-weight:bold;">
+                {bb2_cell}</td>
         </tr>"""
+
 
     if not hc_rows:
         hc_rows = """
@@ -517,21 +560,17 @@ def send_batch_summary(all_results, target_date,
                           margin-bottom:20px;
                           font-size:13px;">
                 <thead>
-                    <tr style="background:#0D2240;
-                               color:white;">
-                        <th style="padding:8px;
-                                   text-align:left;">
+                    <tr style="background:#0D2240;color:white;">
+                        <th style="padding:8px;text-align:left;">
                             Game</th>
-                        <th style="padding:8px;
-                                   text-align:center;">
-                            Best Bet</th>
-                        <th style="padding:8px;
-                                   text-align:center;">
-                            Confidence</th>
-                        <th style="padding:8px;
-                                   text-align:center;">
-                            Units</th>
+                        <th style="padding:8px;text-align:center;">
+                            Best Bet 1</th>
+                        <th style="padding:8px;text-align:center;">
+                            Conf / Units</th>
+                        <th style="padding:8px;text-align:center;">
+                            Best Bet 2</th>
                     </tr>
+
                 </thead>
                 <tbody>{hc_rows}</tbody>
             </table>

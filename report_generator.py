@@ -225,6 +225,15 @@ def generate_pdf_report(game_data, analysis_result,
     b_units = format_unit_label(
         bc if isinstance(bc, int) else 0, picks)
 
+    bb2       = picks.get("best_bet_2", "PASS")
+    bc2       = picks.get("best_bet_2_confidence", 0)
+    bm2       = picks.get("best_bet_2_market", "PASS")
+    b2_units  = format_unit_label(
+        bc2 if isinstance(bc2, int) else 0, picks)
+    show_bb2  = (str(bb2).upper() != "PASS" and
+                 bb2 != "—" and bb2 != "See analysis"
+                 and isinstance(bc2, int) and bc2 >= 57)
+
     picks_data = [
         ["MARKET", "PICK", "LINE",
          "CONFIDENCE", "REC", "UNITS"],
@@ -238,22 +247,43 @@ def generate_pdf_report(game_data, analysis_result,
          safe(str(picks.get("total_line", "—"))),
          f"{tc}%" if isinstance(tc, int) else str(tc),
          safe(tr), t_units],
-        ["BEST BET",
+        ["BEST BET 1",
          safe(str(picks.get("best_bet", "—"))[:40]),
          "—",
          f"{bc}%" if isinstance(bc, int) else str(bc),
-         "★ BEST BET", b_units],
+         "★ PRIMARY", b_units],
     ]
+
+    if show_bb2:
+        picks_data.append([
+            f"BEST BET 2",
+            safe(str(bb2)[:40]),
+            "—",
+            f"{bc2}%",
+            f"★ {bm2}",
+            b2_units
+        ])
+
+
+    extra_styles = [
+        ('BACKGROUND', (0, 1), (-1, 1), pick_bg(sr)),
+        ('BACKGROUND', (0, 2), (-1, 2), pick_bg(tr)),
+        ('BACKGROUND', (0, 3), (-1, 3), LGREEN),
+        ('FONTNAME',   (0, 3), (-1, 3), 'Helvetica-Bold'),
+    ]
+    if show_bb2:
+        extra_styles += [
+            ('BACKGROUND', (0, 4), (-1, 4), LGREEN),
+            ('FONTNAME',   (0, 4), (-1, 4), 'Helvetica-Bold'),
+        ]
 
     story.append(make_table(
         picks_data,
         [0.9*inch, 1.6*inch, 0.8*inch,
          1.0*inch, 1.3*inch, 0.8*inch],
-        [('BACKGROUND', (0, 1), (-1, 1), pick_bg(sr)),
-         ('BACKGROUND', (0, 2), (-1, 2), pick_bg(tr)),
-         ('BACKGROUND', (0, 3), (-1, 3), LGREEN),
-         ('FONTNAME',   (0, 3), (-1, 3), 'Helvetica-Bold')]
+        extra_styles
     ))
+
     story.append(sp(10))
 
     # ── BEST BET HIGHLIGHT ──
@@ -280,9 +310,24 @@ def generate_pdf_report(game_data, analysis_result,
                alignment=TA_CENTER, spaceAfter=4,
                spaceBefore=4, leading=18, borderPad=6)))
 
+    # ── BEST BET 2 HIGHLIGHT ──
+    if show_bb2:
+        b2_tier = get_tier_label(bc2, picks)
+        story.append(Paragraph(
+            f"★  BEST BET 2 ({bm2}):  {safe(bb2)}  "
+            f"({bc2}% — {b2_tier} — {b2_units})",
+            PS("BE2", fontSize=12,
+               fontName="Helvetica-Bold",
+               textColor=colors.white,
+               backColor=colors.HexColor("#1A5A3E"),
+               alignment=TA_CENTER, spaceAfter=6,
+               spaceBefore=4, leading=18,
+               borderPad=8)))
+
     story.append(sp(6))
 
     # ── PREDICTED SCORE ──
+
     predicted = picks.get("predicted_score", "")
     if predicted and predicted != "See analysis":
         story.append(Paragraph(
