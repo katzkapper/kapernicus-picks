@@ -43,6 +43,20 @@
   },
   {
     "date": "March 17, 2026",
+    "game": "NC State Wolfpack @ Texas Longhorns",
+    "market": "TOTAL",
+    "pick": "UNDER 160.5 (-110) \u2014 1.5 units. Model projects 145 points with 15.5-point cushion. Even hot-shooting scenario projects 155 (5.5 under). NC State's elite pace control (#298 nationally) limits possessions in tournament setting. Both teams defensively sound. Historical R32 trend favors Under.",
+    "confidence": 77,
+    "units": 1.5,
+    "tier": "HIGH CONFIDENCE",
+    "tweet_id": "",
+    "result": "PENDING",
+    "rule20": false,
+    "rule31": false,
+    "rule32_gap": 1.5
+  },
+  {
+    "date": "March 17, 2026",
     "game": "UMBC Retrievers @ Howard Bison",
     "market": "SPREAD - UNDERDOG",
     "pick": "UMBC +1.5 - Rule 32 Market Price Efficiency identifies 9.5-10.5 point GAP between model projection (UMBC +8) and current line. Howard's supporting cast variance, 2H shooting decline, and TO ceiling risk all favor UMBC.",
