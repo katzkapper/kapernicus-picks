@@ -26,5 +26,47 @@
     "rule20": false,
     "rule31": false,
     "rule32_gap": 0
+  },
+  {
+    "date": "March 17, 2026",
+    "game": "Liberty Flames @ George Mason Patriots",
+    "market": "TOTAL",
+    "pick": "UNDER 144.5 - All six total scenarios project 126-140 points versus line of 144.5. Liberty's inflated recent scoring (81.7 PPG) built against #214 average defense; Rule 28 efficiency discount revises to 65 pts vs GMU's #71 defense. Tournament pace reduction and defensive intensity suppress scoring. Sharp money moved total from 145.5 to 144.5.",
+    "confidence": 76,
+    "units": 1.5,
+    "tier": "HIGH CONFIDENCE",
+    "tweet_id": "",
+    "result": "PENDING",
+    "rule20": false,
+    "rule31": false,
+    "rule32_gap": 1.5
+  },
+  {
+    "date": "March 17, 2026",
+    "game": "UMBC Retrievers @ Howard Bison",
+    "market": "SPREAD - UNDERDOG",
+    "pick": "UMBC +1.5 - Rule 32 Market Price Efficiency identifies 9.5-10.5 point GAP between model projection (UMBC +8) and current line. Howard's supporting cast variance, 2H shooting decline, and TO ceiling risk all favor UMBC.",
+    "confidence": 71,
+    "units": 1.5,
+    "tier": "HIGH CONFIDENCE",
+    "tweet_id": "",
+    "result": "PENDING",
+    "rule20": false,
+    "rule31": false,
+    "rule32_gap": 9.5
+  },
+  {
+    "date": "March 17, 2026",
+    "game": "UMBC Retrievers @ Howard Bison",
+    "market": "TOTAL",
+    "pick": "Under 141.5 - Base case projects 136 (5.5 below line). Cold scenario 128 (13.5 below). Both teams trend Under (13-7 last 10). Howard 2H shooting decline pattern limits ceiling.",
+    "confidence": 64,
+    "units": 1.5,
+    "tier": "HIGH CONFIDENCE",
+    "tweet_id": "",
+    "result": "PENDING",
+    "rule20": false,
+    "rule31": false,
+    "rule32_gap": 9.5
   }
 ]
