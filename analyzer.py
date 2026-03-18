@@ -24,7 +24,11 @@ CONFIDENCE THRESHOLDS:
 - Rule 32 gap 3+ pts + 57%+: HIGH CONFIDENCE — 1.5 units
 - Rule 20 AND Rule 32 both active: HIGH CONFIDENCE — 2 units
 - Spread confidence below 57% after all adjustments: \
-state PASS, not forced pick
+state PASS on spread
+- Total confidence below 57% after all adjustments: \
+state PASS on total
+- Each market is evaluated INDEPENDENTLY
+- Issue a Best Bet for every market that clears 57%
 
 CRITICAL INSTRUCTION: You MUST end every response with \
 a picks summary block. After your full analysis, on a new \
@@ -38,14 +42,14 @@ exact structure with no missing fields:
   "spread_pick": "Team Name or PASS",
   "spread_line": "-9.5",
   "spread_confidence": 65,
-  "spread_recommendation": "BET or PASS or UNDERDOG COVER or VALUE LEAN",
+  "spread_recommendation": "BET or PASS or UNDERDOG COVER",
   "total_pick": "Under or Over or PASS",
   "total_line": 141.5,
   "total_confidence": 70,
   "total_recommendation": "BET or PASS",
   "best_bet": "describe the primary best bet here",
   "best_bet_confidence": 70,
-  "best_bet_2": "describe the secondary best bet here or PASS",
+  "best_bet_2": "describe the secondary best bet or PASS",
   "best_bet_2_confidence": 65,
   "best_bet_2_market": "SPREAD or TOTAL or PASS",
   "predicted_score": "Team1 75 - Team2 67",
@@ -69,7 +73,8 @@ def build_user_prompt(game_data, full_model_prompt):
 LIVE DATA FOR THIS GAME
 ═══════════════════════════════════════════
 
-GAME: {game_data['team1']} (Away) vs {game_data['team2']} (Home)
+GAME: {game_data['team1']} (Away) vs \
+{game_data['team2']} (Home)
 DATE: {game_data['game_date']}
 SPORT: {game_data['sport']}
 CONTEXT: {game_data['context']}
@@ -81,58 +86,56 @@ CURRENT BETTING LINES:
 INSTRUCTIONS:
 1. Use the betting lines above as your starting point
 2. Use web search to find and verify:
-   - Current injury reports for both teams (within 48 hours)
-   - Last 5 game results and box scores for both teams
+   - Current injury reports (within 48 hours)
+   - Last 5 game results and box scores
    - H2H history with verified box scores
    - KenPom/NET rankings for both teams
    - Any lineup changes in the last 3 days
 3. Apply all 32 rules explicitly in sequence
-4. Generate the complete report following the Step 7 format
-5. You MUST end with the <PICKS> JSON block — this is required
+4. Generate the complete report
+5. You MUST end with the <PICKS> JSON block
 
 REMINDER: End your response with the <PICKS> block. \
-Without it the report cannot display the picks summary. \
 It is mandatory."""
 
 
 def run_analysis(game_data, full_model_prompt):
-    print("Sending to Claude for analysis "
+    import threading
+
+    print("  [0:00] Sending to Claude "
           "(60-120 seconds)...")
-    user_message = build_user_prompt(
-        game_data, full_model_prompt)
+
+    def print_progress():
+        import time
+        intervals = [30, 60, 90, 120, 150, 180]
+        for seconds in intervals:
+            time.sleep(30)
+            print(f"  [{seconds//60}:"
+                  f"{seconds%60:02d}] "
+                  f"Still waiting...")
+
+    progress_thread = threading.Thread(
+        target=print_progress, daemon=True)
+    progress_thread.start()
+
     try:
-        import threading
-
-        print("  [0:00] Request sent to Claude...")
-
-        def print_progress():
-            import time
-            intervals = [30, 60, 90, 120, 150, 180, 210, 240]
-            for seconds in intervals:
-                time.sleep(30)
-                print(f"  [{seconds//60}:{seconds%60:02d}] "
-                      f"Still waiting for Claude response...")
-
-        progress_thread = threading.Thread(
-            target=print_progress, daemon=True)
-        progress_thread.start()
-
         response = client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=16000,
+            max_tokens=12000,
             system=SYSTEM_PROMPT,
             messages=[
-                {"role": "user", "content": user_message}
-            ],
-            timeout=300
+                {"role": "user",
+                 "content": build_user_prompt(
+                     game_data, full_model_prompt)}
+            ]
         )
-
         full_response = response.content[0].text
-        print("Analysis complete.")
+        print("  Analysis complete.")
         picks = extract_picks(full_response)
         if picks.get("parse_failed"):
-            print("  First parse failed — attempting recovery...")
-            picks = extract_picks_fallback(full_response)
+            print("  Parse failed — trying recovery...")
+            picks = extract_picks_fallback(
+                full_response)
         return {
             "full_analysis": full_response,
             "picks":         picks,
@@ -146,7 +149,7 @@ def run_analysis(game_data, full_model_prompt):
     except Exception as e:
         return {
             "error":         str(e),
-            "full_analysis": f"Analysis failed: {str(e)}",
+            "full_analysis": f"Analysis failed: {e}",
             "picks":         {}
         }
 
@@ -170,17 +173,20 @@ def extract_picks(response_text):
 def extract_picks_fallback(response_text):
     try:
         matches = list(re.finditer(
-            r'\{[^{}]+\}', response_text, re.DOTALL))
+            r'\{[^{}]+\}',
+            response_text, re.DOTALL))
         if matches:
             for match in reversed(matches[-5:]):
                 try:
                     candidate = match.group(0)
-                    parsed = json.loads(candidate)
+                    parsed    = json.loads(candidate)
                     if any(k in parsed for k in [
                         "spread_pick", "total_pick",
-                        "best_bet", "spread_recommendation"
+                        "best_bet",
+                        "spread_recommendation"
                     ]):
-                        print("  Fallback parse succeeded.")
+                        print(
+                            "  Fallback parse succeeded.")
                         return parsed
                 except Exception:
                     continue
@@ -212,45 +218,55 @@ def extract_picks_from_text(text):
         "rule32_underdog_prob":  0,
         "rule32_recommendation": "See analysis"
     }
+
     text_lower = text.lower()
+
     if ("sharp fade in effect" in text_lower or
             ("rule 20" in text_lower and
              "triggered" in text_lower)):
         picks["rule20_active"] = True
+
     if ("rule 31 active" in text_lower or
             "star absorption" in text_lower):
         picks["rule31_active"] = True
+
     bb = re.search(
-        r'best bet[:\s]+([^\n]+)', text, re.IGNORECASE)
+        r'best bet[:\s]+([^\n]+)',
+        text, re.IGNORECASE)
     if bb:
         picks["best_bet"] = bb.group(1).strip()[:80]
+
     sc = re.search(
         r'predicted score[:\s]+([^\n]+)',
         text, re.IGNORECASE)
     if sc:
-        picks["predicted_score"] = sc.group(1).strip()
+        picks["predicted_score"] = \
+            sc.group(1).strip()
+
     if ("best bet" in text_lower and
             "under" in text_lower):
-        picks["total_pick"]            = "Under"
-        picks["total_recommendation"]  = "BET"
+        picks["total_pick"]           = "Under"
+        picks["total_recommendation"] = "BET"
     elif ("best bet" in text_lower and
           "over" in text_lower):
-        picks["total_pick"]            = "Over"
-        picks["total_recommendation"]  = "BET"
-    if ("pass" in text_lower and
-        "spread" in text_lower):
-    picks["spread_recommendation"] = "PASS"
-    picks["spread_pick"]           = "PASS"
+        picks["total_pick"]           = "Over"
+        picks["total_recommendation"] = "BET"
 
-    # Try to extract second best bet
+    if ("pass" in text_lower and
+            "spread" in text_lower):
+        picks["spread_recommendation"] = "PASS"
+        picks["spread_pick"]           = "PASS"
+
     bb2 = re.search(
-    r'best bet[^:]*2[^:]*:[^\n]+|'
-    r'best bet[^:]*total[:\s]+([^\n]+)|'
-    r'best bet[^:]*spread[:\s]+([^\n]+)',
-    text, re.IGNORECASE)
+        r'best bet[^:]*2[^:]*:[^\n]+|'
+        r'best bet[^:]*total[:\s]+([^\n]+)|'
+        r'best bet[^:]*spread[:\s]+([^\n]+)',
+        text, re.IGNORECASE)
     if bb2:
-    matched = bb2.group(1) or bb2.group(2) or ""
-    if matched.strip():
-        picks["best_bet_2"] = matched.strip()[:80]
+        matched = (bb2.group(1) or
+                   bb2.group(2) or "")
+        if matched.strip():
+            picks["best_bet_2"] = \
+                matched.strip()[:80]
 
     return picks

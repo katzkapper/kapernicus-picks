@@ -19,11 +19,13 @@ from confidence_utils import (
 # ─────────────────────────────────────────────────────────────
 DISTRIBUTION_LIST = [
     "jrkatz123@gmail.com",
-    "@gmail.com",
+    "jessebergman1@gmail.com",
+    "retserrofad@gmail.com",
 ]
 
 GMAIL_ADDRESS      = os.environ.get("GMAIL_ADDRESS", "")
-GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
+GMAIL_APP_PASSWORD = os.environ.get(
+    "GMAIL_APP_PASSWORD", "")
 
 
 def build_subject(game_data, picks):
@@ -57,13 +59,15 @@ def build_html_body(game_data, picks):
     best_conf= picks.get("best_bet_confidence", "—")
     score    = picks.get("predicted_score", "—")
 
-    s_units  = format_unit_label(
-        sp_conf if isinstance(sp_conf, int) else 0, picks)
-    t_units  = format_unit_label(
-        tot_conf if isinstance(tot_conf, int) else 0, picks)
-    b_units  = format_unit_label(
-        best_conf if isinstance(best_conf, int) else 0,
-        picks)
+    s_units = format_unit_label(
+        sp_conf if isinstance(sp_conf, int)
+        else 0, picks)
+    t_units = format_unit_label(
+        tot_conf if isinstance(tot_conf, int)
+        else 0, picks)
+    b_units = format_unit_label(
+        best_conf if isinstance(best_conf, int)
+        else 0, picks)
 
     def spread_color(rec):
         r = str(rec).upper()
@@ -122,8 +126,10 @@ def build_html_body(game_data, picks):
         <div style="background:#FFF3CD;padding:16px;
                     border-radius:6px;text-align:center;
                     margin:16px 0;">
-            <div style="font-size:18px;font-weight:bold;
-                        color:#333;">BEST BET: PASS</div>
+            <div style="font-size:18px;
+                        font-weight:bold;
+                        color:#333;">
+                BEST BET: PASS</div>
             <div style="font-size:13px;color:#666;
                         margin-top:4px;">
                 No play meets 57% threshold</div>
@@ -133,30 +139,36 @@ def build_html_body(game_data, picks):
         if show_bb2:
             bb2_box = f"""
         <div style="background:#1A5A3E;padding:14px;
-                    border-radius:6px;text-align:center;
+                    border-radius:6px;
+                    text-align:center;
                     margin:8px 0;">
             <div style="font-size:10px;color:#90EE90;
                         letter-spacing:2px;">
                 BEST BET 2 — {bm2}</div>
-            <div style="font-size:17px;font-weight:bold;
+            <div style="font-size:17px;
+                        font-weight:bold;
                         color:white;margin:5px 0;">
                 {bb2}</div>
-            <div style="font-size:13px;color:#90EE90;">
+            <div style="font-size:13px;
+                        color:#90EE90;">
                 {bc2}% — {b2_units}</div>
         </div>"""
 
         best_box = f"""
         <div style="margin:16px 0;">
-            <div style="background:#1A7A3E;padding:16px;
+            <div style="background:#1A7A3E;
+                        padding:16px;
                         border-radius:6px;
                         text-align:center;
                         margin-bottom:8px;">
-                <div style="font-size:11px;color:#90EE90;
+                <div style="font-size:11px;
+                            color:#90EE90;
                             letter-spacing:2px;">
                     BEST BET 1 — SPREAD/TOTAL</div>
                 <div style="font-size:20px;
                             font-weight:bold;
-                            color:white;margin:6px 0;">
+                            color:white;
+                            margin:6px 0;">
                     {best}</div>
                 <div style="font-size:14px;
                             color:#90EE90;">
@@ -168,7 +180,8 @@ def build_html_body(game_data, picks):
     return f"""
     <!DOCTYPE html>
     <html>
-    <body style="margin:0;padding:0;background:#F4F6F9;
+    <body style="margin:0;padding:0;
+                 background:#F4F6F9;
                  font-family:Arial,sans-serif;">
     <div style="max-width:600px;margin:20px auto;
                 background:white;border-radius:8px;
@@ -180,7 +193,8 @@ def build_html_body(game_data, picks):
                         letter-spacing:3px;
                         margin-bottom:8px;">
                 KAPERNICUS PICKS</div>
-            <div style="font-size:22px;font-weight:bold;
+            <div style="font-size:22px;
+                        font-weight:bold;
                         color:white;">
                 {team1} vs {team2}</div>
             <div style="font-size:13px;color:#aaa;
@@ -192,7 +206,8 @@ def build_html_body(game_data, picks):
             {best_box}
             <table style="width:100%;
                           border-collapse:collapse;
-                          margin:16px 0;font-size:13px;">
+                          margin:16px 0;
+                          font-size:13px;">
                 <thead>
                     <tr style="background:#0D2240;
                                color:white;">
@@ -270,22 +285,27 @@ def build_html_body(game_data, picks):
                 </tbody>
             </table>
             <div style="background:#F8F9FA;
-                        border-radius:6px;padding:12px;
-                        text-align:center;margin:12px 0;">
-                <span style="font-size:12px;color:#666;">
+                        border-radius:6px;
+                        padding:12px;
+                        text-align:center;
+                        margin:12px 0;">
+                <span style="font-size:12px;
+                             color:#666;">
                     PREDICTED SCORE: </span>
                 <span style="font-size:14px;
                              font-weight:bold;
-                             color:#0D2240;">{score}</span>
+                             color:#0D2240;">
+                    {score}</span>
             </div>
             <div style="font-size:11px;color:#999;
-                        text-align:center;margin-top:20px;
+                        text-align:center;
+                        margin-top:20px;
                         padding-top:16px;
                         border-top:1px solid #eee;">
                 Full analysis attached as PDF.<br>
                 Generated {datetime.now().strftime(
                     '%B %d, %Y at %I:%M %p')}<br><br>
-                <em>I am the best. Until I am not. For entertainment and informational
+                <em>For entertainment and informational
                 purposes only. Gambling involves risk.
                 Problem Gambling Helpline:
                 1-800-GAMBLER.</em>
@@ -303,13 +323,15 @@ def _send_smtp(to_addresses, msg):
             "smtp.gmail.com", 465, timeout=15
         ) as server:
             server.ehlo()
-            server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+            server.login(
+                GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
             server.sendmail(
                 GMAIL_ADDRESS, to_addresses,
                 msg.as_string())
         return True
     except Exception as e1:
-        print(f"  SSL 465 failed: {e1} — trying TLS 587...")
+        print(f"  SSL 465 failed: {e1} "
+              f"— trying TLS 587...")
         try:
             with smtplib.SMTP(
                 "smtp.gmail.com", 587, timeout=15
@@ -342,7 +364,8 @@ def _build_msg(to_addresses, subject,
     if pdf_path and os.path.exists(pdf_path):
         with open(pdf_path, "rb") as f:
             pdf_data = f.read()
-        attachment = MIMEBase("application", "octet-stream")
+        attachment = MIMEBase(
+            "application", "octet-stream")
         attachment.set_payload(pdf_data)
         encoders.encode_base64(attachment)
         attachment.add_header(
@@ -364,10 +387,11 @@ def send_report(game_data, picks, pdf_path,
         print("  Email skipped: no recipients")
         return False
     if not pdf_path or not os.path.exists(pdf_path):
-        print(f"  Email skipped: PDF not found")
+        print("  Email skipped: PDF not found")
         return False
 
-    print(f"  Sending to {len(recipients)} recipient(s)...")
+    print(f"  Sending to "
+          f"{len(recipients)} recipient(s)...")
     subject   = build_subject(game_data, picks)
     html_body = build_html_body(game_data, picks)
     msg       = _build_msg(
@@ -383,7 +407,8 @@ def send_batch_summary(all_results, target_date,
                        master_pdf_path,
                        distribution_list=None):
     if not GMAIL_ADDRESS or not GMAIL_APP_PASSWORD:
-        print("  Batch email skipped: credentials not set")
+        print("  Batch email skipped: "
+              "credentials not set")
         return False
     recipients = distribution_list or DISTRIBUTION_LIST
     if not recipients:
@@ -395,21 +420,50 @@ def send_batch_summary(all_results, target_date,
 
     total = len(all_results)
 
+    # ── CATEGORIZE RESULTS ──
+    # High confidence: BB1 OR BB2 is 62%+
     def _is_high(r):
-        p    = r.get("picks", {})
-        conf = p.get("best_bet_confidence", 0)
-        return get_confidence_tier(
-            conf, p) == "high_confidence"
+        p     = r.get("picks", {})
+        conf  = p.get("best_bet_confidence", 0)
+        conf2 = p.get("best_bet_2_confidence", 0)
+        if get_confidence_tier(
+                conf, p) == "high_confidence":
+            return True
+        if (isinstance(conf2, int) and
+                conf2 >= HIGH_CONF_FLOOR):
+            return True
+        return False
 
+    # Recommended: BB1 is 57-61% (not high conf)
     def _is_rec(r):
         p    = r.get("picks", {})
         conf = p.get("best_bet_confidence", 0)
-        return get_confidence_tier(
-            conf, p) == "recommended"
+        return (get_confidence_tier(
+            conf, p) == "recommended" and
+            not _is_high(r))
 
-    high_conf   = [r for r in all_results if _is_high(r)]
-    recommended = [r for r in all_results if _is_rec(r)]
+    high_conf   = [r for r in all_results
+                   if _is_high(r)]
+    recommended = [r for r in all_results
+                   if _is_rec(r)]
 
+    # Also add games where BB1 is high conf
+    # but BB2 is recommended (57-61%)
+    hc_labels = {
+        r.get("game_label") for r in high_conf}
+    for r in all_results:
+        p    = r.get("picks", {})
+        bc2  = p.get("best_bet_2_confidence", 0)
+        bb2  = p.get("best_bet_2", "PASS")
+        if (r.get("game_label") in hc_labels and
+                str(bb2).upper() != "PASS" and
+                bb2 != "—" and
+                isinstance(bc2, int) and
+                57 <= bc2 < HIGH_CONF_FLOOR and
+                r not in recommended):
+            recommended.append(r)
+
+    # ── HIGH CONFIDENCE ROWS ──
     hc_rows = ""
     for r in sorted(
         high_conf,
@@ -421,40 +475,105 @@ def send_batch_summary(all_results, target_date,
         conf  = p.get("best_bet_confidence", 0)
         units = format_unit_label(conf, p)
         bg    = get_row_color(conf, p)
-        bb2   = p.get("best_bet_2", "PASS")
-        bc2   = p.get("best_bet_2_confidence", 0)
-        bm2   = p.get("best_bet_2_market", "")
-        u2    = format_unit_label(
+
+        bb2  = p.get("best_bet_2", "PASS")
+        bc2  = p.get("best_bet_2_confidence", 0)
+        u2   = format_unit_label(
             bc2 if isinstance(bc2, int) else 0, p)
 
+        # BB2 only shows in HC email section
+        # if BB2 itself is 62%+
         bb2_cell = "—"
         if (str(bb2).upper() != "PASS" and
-                isinstance(bc2, int) and bc2 >= 57):
+                bb2 != "—" and
+                isinstance(bc2, int) and
+                bc2 >= HIGH_CONF_FLOOR):
             bb2_cell = f"{bb2} ({bc2}% — {u2})"
 
         hc_rows += f"""
         <tr style="background:{bg};">
-            <td style="padding:8px;font-weight:bold;">
+            <td style="padding:8px;
+                       font-weight:bold;">
                 {r.get('game_label','—')}</td>
-            <td style="padding:8px;text-align:center;">
+            <td style="padding:8px;
+                       text-align:center;">
                 {p.get('best_bet','—')}</td>
-            <td style="padding:8px;text-align:center;
-                       color:#1A7A3E;font-weight:bold;">
+            <td style="padding:8px;
+                       text-align:center;
+                       color:#1A7A3E;
+                       font-weight:bold;">
                 {conf}% — {units}</td>
-            <td style="padding:8px;text-align:center;
-                       color:#1A5A3E;font-weight:bold;">
+            <td style="padding:8px;
+                       text-align:center;
+                       color:#1A5A3E;
+                       font-weight:bold;">
                 {bb2_cell}</td>
         </tr>"""
-
 
     if not hc_rows:
         hc_rows = """
         <tr><td colspan="4"
-               style="padding:12px;text-align:center;
+               style="padding:12px;
+                      text-align:center;
                       color:#666;">
             No plays above 62% threshold today
         </td></tr>"""
 
+    # ── RECOMMENDED ROWS ──
+    rec_rows = ""
+    for r in sorted(
+        recommended,
+        key=lambda x: x["picks"].get(
+            "best_bet_confidence", 0),
+        reverse=True
+    ):
+        p     = r.get("picks", {})
+        conf  = p.get("best_bet_confidence", 0)
+        units = format_unit_label(conf, p)
+
+        bb2  = p.get("best_bet_2", "PASS")
+        bc2  = p.get("best_bet_2_confidence", 0)
+        u2   = format_unit_label(
+            bc2 if isinstance(bc2, int) else 0, p)
+
+        # BB2 shows in rec section only if 57-61%
+        bb2_cell = "—"
+        if (str(bb2).upper() != "PASS" and
+                bb2 != "—" and
+                isinstance(bc2, int) and
+                57 <= bc2 < HIGH_CONF_FLOOR):
+            bb2_cell = f"{bb2} ({bc2}% — {u2})"
+
+        rec_rows += f"""
+        <tr style="background:#FFF9E6;">
+            <td style="padding:8px;
+                       font-weight:bold;">
+                {r.get('game_label','—')}</td>
+            <td style="padding:8px;
+                       text-align:center;">
+                {p.get('best_bet','—')}</td>
+            <td style="padding:8px;
+                       text-align:center;
+                       color:#856404;
+                       font-weight:bold;">
+                {conf}% — {units}</td>
+            <td style="padding:8px;
+                       text-align:center;
+                       color:#856404;
+                       font-weight:bold;">
+                {bb2_cell}</td>
+        </tr>"""
+
+    if not rec_rows:
+        rec_rows = """
+        <tr><td colspan="4"
+               style="padding:12px;
+                      text-align:center;
+                      color:#666;">
+            No recommended plays today
+        </td></tr>"""
+
+    # ── ALL GAMES ROWS ──
     all_rows = ""
     for r in all_results:
         p    = r.get("picks", {})
@@ -465,29 +584,38 @@ def send_batch_summary(all_results, target_date,
         <tr style="background:{bg};">
             <td style="padding:7px;font-size:12px;">
                 {r.get('game_label','—')}</td>
-            <td style="padding:7px;text-align:center;
+            <td style="padding:7px;
+                       text-align:center;
                        font-size:12px;">
                 {p.get('spread_pick','—')}
                 {p.get('spread_line','—')}</td>
-            <td style="padding:7px;text-align:center;
+            <td style="padding:7px;
+                       text-align:center;
                        font-size:12px;">
                 {p.get('total_pick','—')}
                 {p.get('total_line','—')}</td>
-            <td style="padding:7px;text-align:center;
-                       font-size:12px;font-weight:bold;">
+            <td style="padding:7px;
+                       text-align:center;
+                       font-size:12px;
+                       font-weight:bold;">
                 {str(p.get('best_bet','—'))[:30]}</td>
-            <td style="padding:7px;text-align:center;
-                       font-size:12px;font-weight:bold;">
+            <td style="padding:7px;
+                       text-align:center;
+                       font-size:12px;
+                       font-weight:bold;">
                 {conf}%</td>
-            <td style="padding:7px;text-align:center;
-                       font-size:12px;font-weight:bold;">
+            <td style="padding:7px;
+                       text-align:center;
+                       font-size:12px;
+                       font-weight:bold;">
                 {units}</td>
         </tr>"""
 
     html = f"""
     <!DOCTYPE html>
     <html>
-    <body style="margin:0;padding:0;background:#F4F6F9;
+    <body style="margin:0;padding:0;
+                 background:#F4F6F9;
                  font-family:Arial,sans-serif;">
     <div style="max-width:700px;margin:20px auto;
                 background:white;border-radius:8px;
@@ -499,7 +627,8 @@ def send_batch_summary(all_results, target_date,
                         letter-spacing:3px;
                         margin-bottom:8px;">
                 KAPERNICUS PICKS</div>
-            <div style="font-size:22px;font-weight:bold;
+            <div style="font-size:22px;
+                        font-weight:bold;
                         color:white;">
                 NCAA Men's Basketball</div>
             <div style="font-size:14px;color:#aaa;
@@ -507,7 +636,10 @@ def send_batch_summary(all_results, target_date,
                 {target_date}</div>
         </div>
         <div style="padding:20px;">
-            <table style="width:100%;margin-bottom:20px;">
+
+            <!-- STATS BOXES -->
+            <table style="width:100%;
+                          margin-bottom:20px;">
                 <tr>
                     <td style="text-align:center;
                                padding:12px;
@@ -551,8 +683,12 @@ def send_batch_summary(all_results, target_date,
                     </td>
                 </tr>
             </table>
-            <div style="font-size:14px;font-weight:bold;
-                        color:#1A7A3E;margin-bottom:8px;">
+
+            <!-- HIGH CONFIDENCE TABLE -->
+            <div style="font-size:14px;
+                        font-weight:bold;
+                        color:#1A7A3E;
+                        margin-bottom:8px;">
                 ★★ High Confidence Plays (62%+)
             </div>
             <table style="width:100%;
@@ -560,22 +696,61 @@ def send_batch_summary(all_results, target_date,
                           margin-bottom:20px;
                           font-size:13px;">
                 <thead>
-                    <tr style="background:#0D2240;color:white;">
-                        <th style="padding:8px;text-align:left;">
+                    <tr style="background:#0D2240;
+                               color:white;">
+                        <th style="padding:8px;
+                                   text-align:left;">
                             Game</th>
-                        <th style="padding:8px;text-align:center;">
+                        <th style="padding:8px;
+                                   text-align:center;">
                             Best Bet 1</th>
-                        <th style="padding:8px;text-align:center;">
+                        <th style="padding:8px;
+                                   text-align:center;">
                             Conf / Units</th>
-                        <th style="padding:8px;text-align:center;">
-                            Best Bet 2</th>
+                        <th style="padding:8px;
+                                   text-align:center;">
+                            Best Bet 2 (62%+)</th>
                     </tr>
-
                 </thead>
                 <tbody>{hc_rows}</tbody>
             </table>
-            <div style="font-size:14px;font-weight:bold;
-                        color:#0D2240;margin-bottom:8px;">
+
+            <!-- RECOMMENDED TABLE -->
+            <div style="font-size:14px;
+                        font-weight:bold;
+                        color:#856404;
+                        margin-bottom:8px;">
+                ★ Recommended Plays (57-61%)
+            </div>
+            <table style="width:100%;
+                          border-collapse:collapse;
+                          margin-bottom:20px;
+                          font-size:13px;">
+                <thead>
+                    <tr style="background:#0D2240;
+                               color:white;">
+                        <th style="padding:8px;
+                                   text-align:left;">
+                            Game</th>
+                        <th style="padding:8px;
+                                   text-align:center;">
+                            Best Bet 1</th>
+                        <th style="padding:8px;
+                                   text-align:center;">
+                            Conf / Units</th>
+                        <th style="padding:8px;
+                                   text-align:center;">
+                            Best Bet 2 (57-61%)</th>
+                    </tr>
+                </thead>
+                <tbody>{rec_rows}</tbody>
+            </table>
+
+            <!-- ALL GAMES TABLE -->
+            <div style="font-size:14px;
+                        font-weight:bold;
+                        color:#0D2240;
+                        margin-bottom:8px;">
                 All Games
             </div>
             <table style="width:100%;
@@ -606,8 +781,10 @@ def send_batch_summary(all_results, target_date,
                 </thead>
                 <tbody>{all_rows}</tbody>
             </table>
+
             <div style="font-size:11px;color:#999;
-                        text-align:center;margin-top:20px;
+                        text-align:center;
+                        margin-top:20px;
                         padding-top:16px;
                         border-top:1px solid #eee;">
                 Master summary PDF attached.<br>

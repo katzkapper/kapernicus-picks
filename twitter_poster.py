@@ -222,16 +222,37 @@ def post_picks_from_batch(all_results, target_date):
 
             if units1 >= MIN_UNITS_TO_POST:
                 # Determine market label
-                sp_rec = str(picks.get(
-                    "spread_recommendation","")).upper()
-                tc_rec = str(picks.get(
-                    "total_recommendation","")).upper()
-                if "BET" in sp_rec or "COVER" in sp_rec:
+                sp_conf = picks.get(
+                    "spread_confidence", 0)
+                tc_conf = picks.get(
+                    "total_confidence", 0)
+                sp_rec  = str(picks.get(
+                    "spread_recommendation",
+                    "")).upper()
+                tc_rec  = str(picks.get(
+                    "total_recommendation",
+                    "")).upper()
+                r32_rec = str(picks.get(
+                    "rule32_recommendation",
+                    "")).upper()
+
+                if "UNDERDOG" in r32_rec or \
+                        "COVER" in sp_rec:
+                    market1 = "SPREAD - UNDERDOG"
+                elif ("BET" in sp_rec and
+                      isinstance(sp_conf, int) and
+                      sp_conf >= 57):
                     market1 = "SPREAD"
-                elif "BET" in tc_rec:
+                elif ("BET" in tc_rec and
+                      isinstance(tc_conf, int) and
+                      tc_conf >= 57):
                     market1 = "TOTAL"
+                elif isinstance(sp_conf, int) and \
+                        sp_conf >= tc_conf:
+                    market1 = "SPREAD"
                 else:
-                    market1 = "BEST BET"
+                    market1 = "TOTAL"
+
 
                 u1_label = format_unit_label(conf1, picks)
                 tweet1   = build_tweet_text(

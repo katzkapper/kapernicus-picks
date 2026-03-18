@@ -565,7 +565,8 @@ IMPORTANT REMINDERS (v7)
 - RULE 31 — STAR ABSORPTION CEILING (v6): When a team's primary scorer is absent and one player absorbs 35%+ of the scoring load, you MUST model that player's ceiling output — NOT their season average — in the total projection. Use their 75th-percentile output from last 10 games. Apply +25% FTA adjustment. Widen total ceiling +15 to +20 pts. If Star Absorption Ceiling scenario produces a combined total within 10 pts of the line: TOTAL = PASS. Do NOT recommend Under unless base case is 10+ pts below the line. Rule 31 fires simultaneously with Rule 12. Root cause: Penn 88, Yale 84 OT. TJ Power scored 44 pts (avg 15.8) after Roberts was ruled out. The model used Power's season average as the anchor. That was the error.
 - RULE 32 — MARKET PRICE EFFICIENCY CHECK (v7): Run on EVERY game. Compute GAP = current spread minus model projected margin. If GAP >= 2 pts: apply -5% to favorite confidence and flag LINE EXCEEDS MODEL. If GAP >= 4 pts: PASS on favorite. Then run the bilateral underdog check. GAP 2-3 pts = ~52-57% baseline. GAP 4-6 pts = ~57-62%. GAP 6+ pts = ~62%+. Apply all standard rule modifiers. If adjusted underdog cover probability reaches 62%+: HIGH CONFIDENCE UNDERDOG COVER — 1.5 units. If 57-61%: UNDERDOG COVER — 1 unit. Below 57%: PASS both sides. Rule 32 does NOT override Rule 20.
 - CONFIDENCE AND UNIT SIZING: Below 57% = PASS (0 units). 57-61% = RECOMMENDED (1 unit). 62%+ = HIGH CONFIDENCE (1.5 units). Rule 20 active + 57%+ = HIGH CONFIDENCE (1 unit). Rule 32 gap 3+ + 57%+ = HIGH CONFIDENCE (1.5 units). Rule 20 AND Rule 32 both active = HIGH CONFIDENCE (2 units). Always state unit size with every pick.
-- DUAL BEST BETS: Issue a Best Bet for EVERY market that independently clears 57%. Do NOT limit to one pick. Spread and total are evaluated independently. Label clearly as BEST BET — SPREAD and BEST BET — TOTAL.
+- DUAL BEST BETS: Issue a Best Bet for EVERY market that independently clears 57%. Do NOT limit to one pick. Spread and total are evaluated independently. Label clearly as BEST BET — SPREAD and BEST BET — TOTAL. Each is tracked independently in the record.
+- BB1 and BB2 are evaluated at their OWN confidence level for tier placement. A BB2 at 60% is RECOMMENDED (1 unit), not High Confidence. A BB2 at 63% is HIGH CONFIDENCE (1.5 units). They do not inherit each other's tier.
 - Model the FLOOR scenario (Rule 9) for volatile scorers.
 - Apply Rule 25 ASYMMETRICALLY: neutralize fatigue if both teams played prior night.
 - Pull actual box scores, not just game summaries.
@@ -606,24 +607,25 @@ SPORT_KEY                 = "basketball_ncaab"
 # ─────────────────────────────────────────────────────────────
 def _is_high_confidence(result):
     """
-    A play qualifies as high confidence if:
-    - Primary best bet confidence >= 62%
-    - OR secondary best bet confidence >= 62%
-    - OR Rule 32 gap >= 3 pts with either confidence >= 57%
-    - OR Rule 20 active with either confidence >= 57%
+    A play qualifies as high confidence if BB1 OR BB1
+    independently meets the 62% threshold.
+    Rule 32 and Rule 20 boosts also apply.
     """
     picks = result.get("picks", {})
     conf  = picks.get("best_bet_confidence", 0)
     conf2 = picks.get("best_bet_2_confidence", 0)
 
-    if isinstance(conf, int) and conf >= HIGH_CONFIDENCE_THRESHOLD:
+    if isinstance(conf, int) and \
+            conf >= HIGH_CONFIDENCE_THRESHOLD:
         return True
-    if isinstance(conf2, int) and conf2 >= HIGH_CONFIDENCE_THRESHOLD:
+    if isinstance(conf2, int) and \
+            conf2 >= HIGH_CONFIDENCE_THRESHOLD:
         return True
 
     try:
         gap = float(
-            str(picks.get("rule32_gap", 0)).replace("—","0") or 0)
+            str(picks.get("rule32_gap", 0)
+                ).replace("—", "0") or 0)
         if gap >= RULE32_STAR_GAP:
             if isinstance(conf, int) and conf >= 57:
                 return True
@@ -644,6 +646,7 @@ def _is_high_confidence(result):
 def _is_recommended(result):
     """
     A play is recommended (57-61%) but not high confidence.
+    Checks BB1 and BB2 independently.
     """
     picks = result.get("picks", {})
     conf  = picks.get("best_bet_confidence", 0)
@@ -651,19 +654,73 @@ def _is_recommended(result):
 
     has_recommended = (
         (isinstance(conf, int) and
-         MIN_CONFIDENCE_TO_FLAG <= conf < HIGH_CONFIDENCE_THRESHOLD) or
+         MIN_CONFIDENCE_TO_FLAG <= conf <
+         HIGH_CONFIDENCE_THRESHOLD) or
         (isinstance(conf2, int) and
-         MIN_CONFIDENCE_TO_FLAG <= conf2 < HIGH_CONFIDENCE_THRESHOLD)
+         MIN_CONFIDENCE_TO_FLAG <= conf2 <
+         HIGH_CONFIDENCE_THRESHOLD)
     )
 
-    return has_recommended and not _is_high_confidence(result)
+    return has_recommended and \
+        not _is_high_confidence(result)
+
+
+def _git_push(message="auto update"):
+    """
+    Push latest picks data to GitHub so Render
+    automatically redeploys with fresh data.
+    """
+    import subprocess
+
+    files_to_push = [
+        "posted_picks.json",
+        "picks_log.json"
+    ]
+
+    try:
+        for f in files_to_push:
+            subprocess.run(
+                ["git", "add", f],
+                capture_output=True
+            )
+
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True
+        )
+
+        if not status.stdout.strip():
+            print("  No changes to push.")
+            return
+
+        subprocess.run(
+            ["git", "commit", "-m",
+             f"auto: {message}"],
+            capture_output=True
+        )
+
+        result = subprocess.run(
+            ["git", "push"],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0:
+            print("  ✓ Pushed to GitHub — "
+                  "Render will update in ~1 min")
+        else:
+            print(f"  ✗ Push failed: "
+                  f"{result.stderr[:100]}")
+            print("  Data saved locally — push manually")
+
+    except Exception as e:
+        print(f"  ✗ Git push error: {e}")
 
 
 def get_todays_games(target_date_str=None):
     """
     Fetch all college basketball games from The Odds API.
-    target_date_str format: 'March 15, 2026'
-    If None, uses today's date.
     """
     url = (f"https://api.the-odds-api.com/v4/sports/"
            f"{SPORT_KEY}/odds")
@@ -678,10 +735,12 @@ def get_todays_games(target_date_str=None):
     print("Fetching today's games from The Odds API...")
 
     try:
-        response = requests.get(url, params=params, timeout=15)
+        response = requests.get(
+            url, params=params, timeout=15)
         data = response.json()
 
-        if isinstance(data, dict) and "message" in data:
+        if isinstance(data, dict) and \
+                "message" in data:
             print(f"API error: {data['message']}")
             return []
 
@@ -693,7 +752,8 @@ def get_todays_games(target_date_str=None):
                 try:
                     game_dt = datetime.fromisoformat(
                         commence.replace("Z", "+00:00"))
-                    game_date_str = game_dt.strftime("%B %d, %Y")
+                    game_date_str = game_dt.strftime(
+                        "%B %d, %Y")
                     game_date_clean = game_date_str.replace(
                         " 0", " ").strip()
                     target_clean = target_date_str.replace(
@@ -712,24 +772,28 @@ def get_todays_games(target_date_str=None):
 
             for bookmaker in game.get("bookmakers", []):
                 if bookmaker.get("title") == "DraftKings":
-                    for market in bookmaker.get("markets", []):
+                    for market in bookmaker.get(
+                            "markets", []):
                         if market["key"] == "spreads":
-                            for outcome in market.get("outcomes", []):
+                            for outcome in market.get(
+                                    "outcomes", []):
                                 if outcome["name"] == home:
                                     spread_info = (
                                         f"{home} "
-                                        f"{outcome['point']:+.1f} "
-                                        f"({outcome['price']:+d})"
+                                        f"{outcome['point']:+.1f}"
+                                        f" ({outcome['price']:+d})"
                                     )
                         elif market["key"] == "totals":
-                            for outcome in market.get("outcomes", []):
+                            for outcome in market.get(
+                                    "outcomes", []):
                                 if outcome["name"] == "Over":
                                     total_info = (
-                                        f"O/U {outcome['point']} "
-                                        f"(O{outcome['price']:+d})"
+                                        f"O/U {outcome['point']}"
+                                        f" (O{outcome['price']:+d})"
                                     )
                         elif market["key"] == "h2h":
-                            for outcome in market.get("outcomes", []):
+                            for outcome in market.get(
+                                    "outcomes", []):
                                 if outcome["name"] == home:
                                     ml_info = (
                                         f"{home} ML "
@@ -746,8 +810,31 @@ def get_todays_games(target_date_str=None):
                 "raw":           game
             })
 
-        print(f"Found {len(games)} games.")
-        return games
+        # ── FILTER OUT GAMES WITH NO LINES ──
+        filtered = []
+        for game in games:
+            spread = game.get("spread", "")
+            total  = game.get("total", "")
+
+            if ("No line" in spread and
+                    "No line" in total):
+                print(f"  Skipping: "
+                      f"{game['away_team']} "
+                      f"@ {game['home_team']} "
+                      f"— no lines posted")
+                continue
+
+            filtered.append(game)
+
+        skipped = len(games) - len(filtered)
+        if skipped > 0:
+            print(f"  Filtered out {skipped} game(s) "
+                  f"with no lines posted.")
+
+        print(f"Found {len(filtered)} games "
+              f"with lines to analyze.")
+        return filtered
+
 
     except Exception as e:
         print(f"Error fetching games: {e}")
@@ -762,7 +849,8 @@ def format_game_data_for_analysis(game, target_date):
         "game_date":      target_date,
         "context":        "NCAA Men's Basketball",
         "betting_lines": (
-            f"Game: {game['away_team']} @ {game['home_team']}\n"
+            f"Game: {game['away_team']} "
+            f"@ {game['home_team']}\n"
             f"Commence: {game['commence_time']}\n"
             f"  DraftKings Spread: {game['spread']}\n"
             f"  DraftKings Total: {game['total']}\n"
@@ -772,11 +860,14 @@ def format_game_data_for_analysis(game, target_date):
     }
 
 
-def generate_master_summary_pdf(all_results, target_date,
-                                 output_dir="reports"):
+def generate_master_summary_pdf(
+        all_results, target_date, output_dir="reports"):
+
     os.makedirs(output_dir, exist_ok=True)
-    date_str = target_date.replace("/","-").replace(" ","_")
-    filename = f"{output_dir}/MASTER_SUMMARY_{date_str}.pdf"
+    date_str = target_date.replace(
+        "/", "-").replace(" ", "_")
+    filename = (f"{output_dir}/"
+                f"MASTER_SUMMARY_{date_str}.pdf")
 
     doc = SimpleDocTemplate(
         filename, pagesize=letter,
@@ -785,7 +876,6 @@ def generate_master_summary_pdf(all_results, target_date,
     )
 
     NAVY   = colors.HexColor("#0D2240")
-    GOLD   = colors.HexColor("#C8A951")
     GREEN  = colors.HexColor("#1A7A3E")
     RED    = colors.HexColor("#CC0000")
     LGRAY  = colors.HexColor("#F5F5F5")
@@ -798,7 +888,8 @@ def generate_master_summary_pdf(all_results, target_date,
     def PS(name, **kw):
         s = ParagraphStyle(name)
         d = dict(fontSize=9, fontName="Helvetica",
-                 textColor=DGRAY, spaceAfter=3, leading=13)
+                 textColor=DGRAY, spaceAfter=3,
+                 leading=13)
         d.update(kw)
         for k, v in d.items():
             setattr(s, k, v)
@@ -806,9 +897,9 @@ def generate_master_summary_pdf(all_results, target_date,
 
     def safe(text):
         return (str(text or "—")
-                .replace('&','&amp;')
-                .replace('<','&lt;')
-                .replace('>','&gt;'))
+                .replace('&', '&amp;')
+                .replace('<', '&lt;')
+                .replace('>', '&gt;'))
 
     story = []
 
@@ -816,37 +907,66 @@ def generate_master_summary_pdf(all_results, target_date,
     story.append(Paragraph(
         "KAPERNICUS PICKS — MASTER SUMMARY",
         PS("H", fontSize=18, fontName="Helvetica-Bold",
-           textColor=NAVY, alignment=TA_CENTER, spaceAfter=4)))
+           textColor=NAVY, alignment=TA_CENTER,
+           spaceAfter=4)))
     story.append(Paragraph(
         f"NCAA Men's Basketball | {target_date}",
         PS("ST", fontSize=11, textColor=MGRAY,
            alignment=TA_CENTER, spaceAfter=4)))
     story.append(Paragraph(
         f"Generated: "
-        f"{datetime.now().strftime('%B %d, %Y %I:%M %p')} | "
-        f"Games analyzed: {len(all_results)}",
+        f"{datetime.now().strftime('%B %d, %Y %I:%M %p')}"
+        f" | Games analyzed: {len(all_results)}",
         PS("DT", fontSize=9, textColor=MGRAY,
            alignment=TA_CENTER, spaceAfter=10)))
     story.append(HRFlowable(
         width="100%", thickness=2,
         color=NAVY, spaceAfter=12))
 
-    # ── HIGH CONFIDENCE PLAYS ──
-    high_conf_results = [r for r in all_results
-                         if _is_high_confidence(r)]
-    rec_results       = [r for r in all_results
-                         if _is_recommended(r)]
+    # ── CATEGORIZE RESULTS ──
+    high_conf_results = [
+        r for r in all_results
+        if _is_high_confidence(r)]
 
+    # Recommended: BB1 is 57-61% (not high conf)
+    # OR BB2 is 57-61% even if BB1 is high conf
+    base_rec = [
+        r for r in all_results
+        if _is_recommended(r)]
+
+    # Also catch games where BB1 is high conf
+    # but BB2 is in the recommended range
+    hc_labels = {
+        r.get("game_label")
+        for r in high_conf_results}
+    extra_rec = []
+    for r in all_results:
+        p    = r.get("picks", {})
+        bc2  = p.get("best_bet_2_confidence", 0)
+        bb2  = p.get("best_bet_2", "PASS")
+        if (r.get("game_label") in hc_labels and
+                str(bb2).upper() != "PASS" and
+                bb2 != "—" and
+                isinstance(bc2, int) and
+                MIN_CONFIDENCE_TO_FLAG <= bc2 <
+                HIGH_CONFIDENCE_THRESHOLD and
+                r not in base_rec):
+            extra_rec.append(r)
+
+    rec_results = base_rec + extra_rec
+
+    # ── HIGH CONFIDENCE PLAYS ──
     if high_conf_results:
         story.append(Paragraph(
             f"★★  HIGH CONFIDENCE PLAYS  "
             f"({len(high_conf_results)} found)",
-            PS("BBH", fontSize=13, fontName="Helvetica-Bold",
-               textColor=colors.white, backColor=GREEN,
+            PS("BBH", fontSize=13,
+               fontName="Helvetica-Bold",
+               textColor=colors.white,
+               backColor=GREEN,
                alignment=TA_CENTER, borderPad=6,
                spaceAfter=8, leading=20)))
 
-        # Table now has Best Bet 1 AND Best Bet 2 columns
         bb_data = [["GAME", "BEST BET 1",
                     "BEST BET 2",
                     "SPREAD", "TOTAL", "FLAGS"]]
@@ -868,7 +988,7 @@ def generate_master_summary_pdf(all_results, target_date,
             try:
                 gap = float(str(
                     picks.get("rule32_gap", 0)
-                ).replace("—","0") or 0)
+                ).replace("—", "0") or 0)
                 if gap >= 2:
                     flags.append(f"R32({gap})")
             except (ValueError, TypeError):
@@ -876,20 +996,28 @@ def generate_master_summary_pdf(all_results, target_date,
 
             conf1  = picks.get("best_bet_confidence", 0)
             units1 = format_unit_label(
-                conf1 if isinstance(conf1, int) else 0, picks)
-            bb1    = (f"{safe(str(picks.get('best_bet','—'))[:28])}"
-                      f" ({conf1}% {units1})")
+                conf1 if isinstance(conf1, int)
+                else 0, picks)
+            bb1 = (
+                f"{safe(str(picks.get('best_bet','—'))[:28])}"
+                f" ({conf1}% {units1})")
 
-            bb2    = picks.get("best_bet_2", "PASS")
-            conf2  = picks.get("best_bet_2_confidence", 0)
-            bm2    = picks.get("best_bet_2_market", "")
+            bb2   = picks.get("best_bet_2", "PASS")
+            conf2 = picks.get(
+                "best_bet_2_confidence", 0)
             units2 = format_unit_label(
-                conf2 if isinstance(conf2, int) else 0, picks)
+                conf2 if isinstance(conf2, int)
+                else 0, picks)
 
-            if (str(bb2).upper() != "PASS" and bb2 != "—"
-                    and isinstance(conf2, int) and conf2 >= 57):
-                bb2_str = (f"{safe(str(bb2)[:22])}"
-                           f" ({conf2}% {units2})")
+            # BB2 only shows in HC table if BB2
+            # itself meets the 62% threshold
+            if (str(bb2).upper() != "PASS" and
+                    bb2 != "—" and
+                    isinstance(conf2, int) and
+                    conf2 >= HIGH_CONFIDENCE_THRESHOLD):
+                bb2_str = (
+                    f"{safe(str(bb2)[:22])}"
+                    f" ({conf2}% {units2})")
             else:
                 bb2_str = "—"
 
@@ -901,7 +1029,8 @@ def generate_master_summary_pdf(all_results, target_date,
                      f"{picks.get('spread_line','—')}"),
                 safe(f"{picks.get('total_pick','—')} "
                      f"{picks.get('total_line','—')}"),
-                safe(", ".join(flags) if flags else "—")
+                safe(", ".join(flags)
+                     if flags else "—")
             ])
 
         bb_table = Table(
@@ -910,16 +1039,18 @@ def generate_master_summary_pdf(all_results, target_date,
                        0.95*inch, 0.9*inch, 0.85*inch]
         )
         bb_table.setStyle(TableStyle([
-            ('FONTNAME',  (0,0), (-1,0), 'Helvetica-Bold'),
-            ('FONTSIZE',  (0,0), (-1,-1), 8),
-            ('BACKGROUND',(0,0), (-1,0), NAVY),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-            ('GRID',      (0,0), (-1,-1), 0.4, MGRAY),
-            ('VALIGN',    (0,0), (-1,-1), 'MIDDLE'),
-            ('TOPPADDING',    (0,0), (-1,-1), 4),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-            ('LEFTPADDING',   (0,0), (-1,-1), 4),
-            ('ROWBACKGROUNDS',(0,1), (-1,-1),
+            ('FONTNAME',  (0, 0), (-1, 0),
+             'Helvetica-Bold'),
+            ('FONTSIZE',  (0, 0), (-1, -1), 8),
+            ('BACKGROUND', (0, 0), (-1, 0), NAVY),
+            ('TEXTCOLOR', (0, 0), (-1, 0),
+             colors.white),
+            ('GRID',      (0, 0), (-1, -1), 0.4, MGRAY),
+            ('VALIGN',    (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING',    (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 4),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1),
              [LGREEN, colors.HexColor("#D4EDDA")]),
         ]))
         story.append(bb_table)
@@ -928,8 +1059,10 @@ def generate_master_summary_pdf(all_results, target_date,
     # ── RECOMMENDED PLAYS ──
     if rec_results:
         story.append(Paragraph(
-            f"★  RECOMMENDED PLAYS  ({len(rec_results)} found)",
-            PS("RH", fontSize=12, fontName="Helvetica-Bold",
+            f"★  RECOMMENDED PLAYS  "
+            f"({len(rec_results)} found)",
+            PS("RH", fontSize=12,
+               fontName="Helvetica-Bold",
                textColor=colors.white,
                backColor=colors.HexColor("#856404"),
                alignment=TA_CENTER, borderPad=5,
@@ -949,19 +1082,29 @@ def generate_master_summary_pdf(all_results, target_date,
 
             conf1  = picks.get("best_bet_confidence", 0)
             units1 = format_unit_label(
-                conf1 if isinstance(conf1, int) else 0, picks)
-            bb1    = (f"{safe(str(picks.get('best_bet','—'))[:28])}"
-                      f" ({conf1}% {units1})")
+                conf1 if isinstance(conf1, int)
+                else 0, picks)
+            bb1 = (
+                f"{safe(str(picks.get('best_bet','—'))[:28])}"
+                f" ({conf1}% {units1})")
 
             bb2   = picks.get("best_bet_2", "PASS")
-            conf2 = picks.get("best_bet_2_confidence", 0)
-            units2= format_unit_label(
-                conf2 if isinstance(conf2, int) else 0, picks)
+            conf2 = picks.get(
+                "best_bet_2_confidence", 0)
+            units2 = format_unit_label(
+                conf2 if isinstance(conf2, int)
+                else 0, picks)
 
-            if (str(bb2).upper() != "PASS" and bb2 != "—"
-                    and isinstance(conf2, int) and conf2 >= 57):
-                bb2_str = (f"{safe(str(bb2)[:22])}"
-                           f" ({conf2}% {units2})")
+            # BB2 shows in recommended table only
+            # if BB2 is in the 57-61% range
+            if (str(bb2).upper() != "PASS" and
+                    bb2 != "—" and
+                    isinstance(conf2, int) and
+                    MIN_CONFIDENCE_TO_FLAG <= conf2 <
+                    HIGH_CONFIDENCE_THRESHOLD):
+                bb2_str = (
+                    f"{safe(str(bb2)[:22])}"
+                    f" ({conf2}% {units2})")
             else:
                 bb2_str = "—"
 
@@ -981,16 +1124,18 @@ def generate_master_summary_pdf(all_results, target_date,
                        1.0*inch, 0.95*inch]
         )
         rec_table.setStyle(TableStyle([
-            ('FONTNAME',  (0,0), (-1,0), 'Helvetica-Bold'),
-            ('FONTSIZE',  (0,0), (-1,-1), 8),
-            ('BACKGROUND',(0,0), (-1,0), NAVY),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-            ('GRID',      (0,0), (-1,-1), 0.4, MGRAY),
-            ('VALIGN',    (0,0), (-1,-1), 'MIDDLE'),
-            ('TOPPADDING',    (0,0), (-1,-1), 4),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-            ('LEFTPADDING',   (0,0), (-1,-1), 4),
-            ('ROWBACKGROUNDS',(0,1), (-1,-1),
+            ('FONTNAME',  (0, 0), (-1, 0),
+             'Helvetica-Bold'),
+            ('FONTSIZE',  (0, 0), (-1, -1), 8),
+            ('BACKGROUND', (0, 0), (-1, 0), NAVY),
+            ('TEXTCOLOR', (0, 0), (-1, 0),
+             colors.white),
+            ('GRID',      (0, 0), (-1, -1), 0.4, MGRAY),
+            ('VALIGN',    (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING',    (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 4),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1),
              [YELLOW, colors.HexColor("#FFF3CD")]),
         ]))
         story.append(rec_table)
@@ -998,14 +1143,17 @@ def generate_master_summary_pdf(all_results, target_date,
 
     # ── ACTIVE RULE FLAGS ──
     r20_games = [r for r in all_results
-                 if r.get("picks", {}).get("rule20_active")]
+                 if r.get("picks", {}).get(
+                     "rule20_active")]
     r31_games = [r for r in all_results
-                 if r.get("picks", {}).get("rule31_active")]
+                 if r.get("picks", {}).get(
+                     "rule31_active")]
 
     if r20_games or r31_games:
         story.append(Paragraph(
             "ACTIVE RULE FLAGS",
-            PS("RFH", fontSize=11, fontName="Helvetica-Bold",
+            PS("RFH", fontSize=11,
+               fontName="Helvetica-Bold",
                textColor=colors.white, backColor=RED,
                alignment=TA_CENTER, borderPad=5,
                spaceAfter=6, leading=18)))
@@ -1015,25 +1163,32 @@ def generate_master_summary_pdf(all_results, target_date,
                 f"⚑  RULE 20 SHARP FADE — "
                 f"{safe(r.get('game_label','Unknown'))}",
                 PS(f"R20g{id(r)}",
-                   fontSize=9, fontName="Helvetica-Bold",
-                   textColor=colors.white, backColor=RED,
-                   borderPad=4, spaceAfter=3, leading=14)))
+                   fontSize=9,
+                   fontName="Helvetica-Bold",
+                   textColor=colors.white,
+                   backColor=RED,
+                   borderPad=4, spaceAfter=3,
+                   leading=14)))
 
         for r in r31_games:
             story.append(Paragraph(
                 f"⚑  RULE 31 STAR ABSORPTION — "
                 f"{safe(r.get('game_label','Unknown'))}",
                 PS(f"R31g{id(r)}",
-                   fontSize=9, fontName="Helvetica-Bold",
-                   textColor=colors.white, backColor=ORANGE,
-                   borderPad=4, spaceAfter=3, leading=14)))
+                   fontSize=9,
+                   fontName="Helvetica-Bold",
+                   textColor=colors.white,
+                   backColor=ORANGE,
+                   borderPad=4, spaceAfter=3,
+                   leading=14)))
 
         story.append(Spacer(1, 12))
 
     # ── ALL GAMES TABLE ──
     story.append(Paragraph(
         "ALL GAMES",
-        PS("AGH", fontSize=11, fontName="Helvetica-Bold",
+        PS("AGH", fontSize=11,
+           fontName="Helvetica-Bold",
            textColor=colors.white, backColor=NAVY,
            alignment=TA_CENTER, borderPad=5,
            spaceAfter=6, leading=18)))
@@ -1049,14 +1204,15 @@ def generate_master_summary_pdf(all_results, target_date,
         sc    = picks.get("spread_confidence", "—")
         tc    = picks.get("total_confidence", "—")
 
-        bb2     = picks.get("best_bet_2", "PASS")
-        conf2   = picks.get("best_bet_2_confidence", 0)
-        units2  = format_unit_label(
-            conf2 if isinstance(conf2, int) else 0, picks)
+        bb2    = picks.get("best_bet_2", "PASS")
+        conf2  = picks.get("best_bet_2_confidence", 0)
         bb2_disp = "—"
-        if (str(bb2).upper() != "PASS" and bb2 != "—"
-                and isinstance(conf2, int) and conf2 >= 57):
-            bb2_disp = f"{safe(str(bb2)[:20])} ({conf2}%)"
+        if (str(bb2).upper() != "PASS" and
+                bb2 != "—" and
+                isinstance(conf2, int) and
+                conf2 >= MIN_CONFIDENCE_TO_FLAG):
+            bb2_disp = (
+                f"{safe(str(bb2)[:20])} ({conf2}%)")
 
         table_data.append([
             safe(game),
@@ -1066,40 +1222,41 @@ def generate_master_summary_pdf(all_results, target_date,
             safe(f"{picks.get('total_pick','—')} "
                  f"{picks.get('total_line','—')}"),
             f"{tc}%" if isinstance(tc, int) else "—",
-            safe(str(picks.get("best_bet","—"))[:25]),
+            safe(str(picks.get("best_bet", "—"))[:25]),
             bb2_disp
         ])
 
     row_styles = [
-        ('FONTNAME',  (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE',  (0,0), (-1,-1), 7.5),
-        ('BACKGROUND',(0,0), (-1,0), NAVY),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('GRID',      (0,0), (-1,-1), 0.3, MGRAY),
-        ('VALIGN',    (0,0), (-1,-1), 'MIDDLE'),
-        ('TOPPADDING',    (0,0), (-1,-1), 3),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
-        ('LEFTPADDING',   (0,0), (-1,-1), 3),
-        ('ROWBACKGROUNDS',(0,1), (-1,-1),
+        ('FONTNAME',  (0, 0), (-1, 0),
+         'Helvetica-Bold'),
+        ('FONTSIZE',  (0, 0), (-1, -1), 7.5),
+        ('BACKGROUND', (0, 0), (-1, 0), NAVY),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('GRID',      (0, 0), (-1, -1), 0.3, MGRAY),
+        ('VALIGN',    (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING',    (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 3),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1),
          [colors.white, LGRAY]),
     ]
 
     for i, result in enumerate(all_results, start=1):
-        picks   = result.get("picks", {})
-        bb_conf = picks.get("best_bet_confidence", 0)
         if _is_high_confidence(result):
             row_styles.append(
-                ('BACKGROUND', (0,i), (-1,i), LGREEN))
+                ('BACKGROUND', (0, i), (-1, i), LGREEN))
             row_styles.append(
-                ('FONTNAME', (0,i), (-1,i), 'Helvetica-Bold'))
+                ('FONTNAME', (0, i), (-1, i),
+                 'Helvetica-Bold'))
         elif _is_recommended(result):
             row_styles.append(
-                ('BACKGROUND', (0,i), (-1,i), YELLOW))
+                ('BACKGROUND', (0, i), (-1, i), YELLOW))
 
     full_table = Table(
         table_data,
         colWidths=[1.1*inch, 1.0*inch, 0.4*inch,
-                   0.95*inch, 0.4*inch, 1.1*inch, 1.1*inch]
+                   0.95*inch, 0.4*inch,
+                   1.1*inch, 1.1*inch]
     )
     full_table.setStyle(TableStyle(row_styles))
     story.append(full_table)
@@ -1116,46 +1273,51 @@ def generate_master_summary_pdf(all_results, target_date,
     pass_count  = sum(
         1 for r in all_results
         if "PASS" in str(
-            r.get("picks",{}).get(
-                "spread_recommendation","")).upper()
+            r.get("picks", {}).get(
+                "spread_recommendation", "")).upper()
     )
     r32_count = sum(
         1 for r in all_results
-        if float(str(r.get("picks",{}).get(
-            "rule32_gap",0)).replace("—","0") or 0) >= 2
+        if float(str(r.get("picks", {}).get(
+            "rule32_gap", 0)
+        ).replace("—", "0") or 0) >= 2
     )
 
     stats_data = [
         ["BATCH STATISTICS", "", "", ""],
         ["Total Games Analyzed", str(total_games),
          "Sharp Fade (Rule 20)", str(r20_count)],
-        [f"High Confidence ({HIGH_CONFIDENCE_THRESHOLD}%+)",
+        [f"High Confidence "
+         f"({HIGH_CONFIDENCE_THRESHOLD}%+)",
          str(len(high_conf_results)),
          "Star Absorption (Rule 31)", str(r31_count)],
         [f"Recommended ({MIN_CONFIDENCE_TO_FLAG}-"
-         f"{HIGH_CONFIDENCE_THRESHOLD-1}%)",
+         f"{HIGH_CONFIDENCE_THRESHOLD - 1}%)",
          str(len(rec_results)),
-         "Line Exceeds Model (Rule 32)", str(r32_count)],
+         "Line Exceeds Model (Rule 32)",
+         str(r32_count)],
         ["Spread PASS Count", str(pass_count), "", ""],
     ]
 
     stats_table = Table(
         stats_data,
-        colWidths=[2.2*inch, 0.8*inch, 2.2*inch, 0.8*inch]
+        colWidths=[2.2*inch, 0.8*inch,
+                   2.2*inch, 0.8*inch]
     )
     stats_table.setStyle(TableStyle([
-        ('FONTNAME',  (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE',  (0,0), (-1,-1), 9),
-        ('BACKGROUND',(0,0), (-1,0), NAVY),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('SPAN',      (0,0), (-1,0)),
-        ('ALIGN',     (0,0), (-1,0), 'CENTER'),
-        ('GRID',      (0,0), (-1,-1), 0.3, MGRAY),
-        ('ROWBACKGROUNDS',(0,1), (-1,-1),
+        ('FONTNAME',  (0, 0), (-1, 0),
+         'Helvetica-Bold'),
+        ('FONTSIZE',  (0, 0), (-1, -1), 9),
+        ('BACKGROUND', (0, 0), (-1, 0), NAVY),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('SPAN',      (0, 0), (-1, 0)),
+        ('ALIGN',     (0, 0), (-1, 0), 'CENTER'),
+        ('GRID',      (0, 0), (-1, -1), 0.3, MGRAY),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1),
          [colors.white, LGRAY]),
-        ('TOPPADDING',    (0,0), (-1,-1), 4),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-        ('LEFTPADDING',   (0,0), (-1,-1), 6),
+        ('TOPPADDING',    (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 6),
     ]))
     story.append(stats_table)
     story.append(Spacer(1, 10))
@@ -1170,8 +1332,9 @@ def generate_master_summary_pdf(all_results, target_date,
         PS("FT", fontSize=7, textColor=MGRAY,
            alignment=TA_CENTER)))
     story.append(Paragraph(
-        "FOR ENTERTAINMENT AND INFORMATIONAL PURPOSES ONLY. "
-        "Gambling involves risk. Helpline: 1-800-GAMBLER.",
+        "FOR ENTERTAINMENT AND INFORMATIONAL PURPOSES "
+        "ONLY. Gambling involves risk. "
+        "Helpline: 1-800-GAMBLER.",
         PS("DS", fontSize=7, textColor=RED,
            alignment=TA_CENTER)))
 
@@ -1197,54 +1360,87 @@ def save_batch_log(all_results, target_date):
         conf2 = picks.get("best_bet_2_confidence", 0)
 
         entry = {
-            "date":                  target_date,
-            "game":                  result.get("game_label","Unknown"),
-            "sport":                 SPORT,
-            "context":               "NCAA Men's Basketball",
-            "spread_pick":           picks.get("spread_pick"),
-            "spread_line":           picks.get("spread_line"),
-            "spread_confidence":     picks.get("spread_confidence"),
-            "spread_recommendation": picks.get("spread_recommendation"),
-            "total_pick":            picks.get("total_pick"),
-            "total_line":            picks.get("total_line"),
-            "total_confidence":      picks.get("total_confidence"),
-            "best_bet":              picks.get("best_bet"),
-            "best_bet_confidence":   conf,
-            "best_bet_units":        get_unit_size(
-                conf if isinstance(conf,int) else 0, picks),
-            "best_bet_tier":         get_tier_label(
-                conf if isinstance(conf,int) else 0, picks),
-            "best_bet_2":            picks.get("best_bet_2","PASS"),
-            "best_bet_2_confidence": conf2,
-            "best_bet_2_market":     picks.get("best_bet_2_market",""),
-            "best_bet_2_units":      get_unit_size(
-                conf2 if isinstance(conf2,int) else 0, picks),
-            "predicted_score":       picks.get("predicted_score"),
-            "rule20_active":         picks.get("rule20_active"),
-            "rule31_active":         picks.get("rule31_active"),
-            "rule32_gap":            picks.get("rule32_gap"),
-            "rule32_recommendation": picks.get("rule32_recommendation"),
-            "pdf_report":            result.get("pdf_path",""),
-            "result":                "PENDING",
-            "batch_run":             True
+            "date":
+                target_date,
+            "game":
+                result.get("game_label", "Unknown"),
+            "sport":
+                SPORT,
+            "context":
+                "NCAA Men's Basketball",
+            "spread_pick":
+                picks.get("spread_pick"),
+            "spread_line":
+                picks.get("spread_line"),
+            "spread_confidence":
+                picks.get("spread_confidence"),
+            "spread_recommendation":
+                picks.get("spread_recommendation"),
+            "total_pick":
+                picks.get("total_pick"),
+            "total_line":
+                picks.get("total_line"),
+            "total_confidence":
+                picks.get("total_confidence"),
+            "best_bet":
+                picks.get("best_bet"),
+            "best_bet_confidence":
+                conf,
+            "best_bet_units":
+                get_unit_size(
+                    conf if isinstance(conf, int)
+                    else 0, picks),
+            "best_bet_tier":
+                get_tier_label(
+                    conf if isinstance(conf, int)
+                    else 0, picks),
+            "best_bet_2":
+                picks.get("best_bet_2", "PASS"),
+            "best_bet_2_confidence":
+                conf2,
+            "best_bet_2_market":
+                picks.get("best_bet_2_market", ""),
+            "best_bet_2_units":
+                get_unit_size(
+                    conf2 if isinstance(conf2, int)
+                    else 0, picks),
+            "predicted_score":
+                picks.get("predicted_score"),
+            "rule20_active":
+                picks.get("rule20_active"),
+            "rule31_active":
+                picks.get("rule31_active"),
+            "rule32_gap":
+                picks.get("rule32_gap"),
+            "rule32_recommendation":
+                picks.get("rule32_recommendation"),
+            "pdf_report":
+                result.get("pdf_path", ""),
+            "result":
+                "PENDING",
+            "batch_run":
+                True
         }
         existing.append(entry)
 
     with open(log_file, 'w') as f:
         json.dump(existing, f, indent=2)
 
-    print(f"All {len(all_results)} picks logged to {log_file}")
+    print(f"All {len(all_results)} picks "
+          f"logged to {log_file}")
 
 
 def run_batch(target_date=None):
+
     # ── SETUP CHECKS ──
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("\nERROR: ANTHROPIC_API_KEY not set in Replit Secrets")
+        print("\nERROR: ANTHROPIC_API_KEY not set")
         return
 
     # ── DATE SETUP ──
     if target_date is None:
-        target_date = datetime.now().strftime("%B %-d, %Y")
+        target_date = datetime.now().strftime(
+            "%B %-d, %Y")
 
     print("\n" + "="*60)
     print("   BATCH ANALYZER — 32-RULE MODEL v7")
@@ -1266,13 +1462,16 @@ def run_batch(target_date=None):
 
     print("\nGames queued for analysis:")
     for i, game in enumerate(games, 1):
-        print(f"  {i}. {game['away_team']} @ {game['home_team']}")
+        print(f"  {i}. {game['away_team']} "
+              f"@ {game['home_team']}")
         print(f"     Spread: {game['spread']}")
         print(f"     Total:  {game['total']}")
 
-    est_minutes = (len(games) * (90 + DELAY_BETWEEN_GAMES)) / 60
+    est_minutes = (
+        len(games) * (90 + DELAY_BETWEEN_GAMES)) / 60
     print(f"\nEstimated time: "
-          f"{est_minutes:.0f}-{est_minutes*1.3:.0f} minutes")
+          f"{est_minutes:.0f}-"
+          f"{est_minutes*1.3:.0f} minutes")
     print("Keep this tab open and your iPad plugged in.")
     print("\nStarting analysis in 5 seconds...")
     time.sleep(5)
@@ -1298,22 +1497,27 @@ def run_batch(target_date=None):
                 raise TimeoutError(
                     "Analysis exceeded 5 minute limit")
 
-            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.signal(
+                signal.SIGALRM, timeout_handler)
             signal.alarm(300)
 
             print("  [0:00] Sending to Claude...")
             analysis_result = run_analysis(
                 game_data, BATCH_MODEL_PROMPT)
 
+
             signal.alarm(0)
 
             if ("error" in analysis_result and
-                    not analysis_result.get("full_analysis")):
-                print(f"  ERROR: {analysis_result['error']}")
+                    not analysis_result.get(
+                        "full_analysis")):
+                print(f"  ERROR: "
+                      f"{analysis_result['error']}")
                 all_results.append({
                     "game_label": game_label,
                     "picks":      {},
-                    "error":      analysis_result["error"],
+                    "error":      analysis_result[
+                        "error"],
                     "pdf_path":   ""
                 })
                 continue
@@ -1326,26 +1530,33 @@ def run_batch(target_date=None):
                 pdf_path = ""
 
             picks = analysis_result.get("picks", {})
-            conf  = picks.get("best_bet_confidence","—")
-            conf2 = picks.get("best_bet_2_confidence", 0)
+            conf  = picks.get(
+                "best_bet_confidence", "—")
+            conf2 = picks.get(
+                "best_bet_2_confidence", 0)
 
             print(f"  SPREAD:     "
                   f"{picks.get('spread_pick','—')} "
                   f"{picks.get('spread_line','—')} | "
-                  f"{picks.get('spread_confidence','—')}% | "
+                  f"{picks.get('spread_confidence','—')}%"
+                  f" | "
                   f"{picks.get('spread_recommendation','—')}")
             print(f"  TOTAL:      "
                   f"{picks.get('total_pick','—')} "
                   f"{picks.get('total_line','—')} | "
                   f"{picks.get('total_confidence','—')}%")
             print(f"  BEST BET 1: "
-                  f"{picks.get('best_bet','—')} ({conf}%)")
+                  f"{picks.get('best_bet','—')} "
+                  f"({conf}%)")
 
             if (picks.get("best_bet_2") and
-                    str(picks.get("best_bet_2")).upper() != "PASS"
-                    and isinstance(conf2, int) and conf2 >= 57):
-                u2 = format_unit_label(conf2, picks)
-                bm2 = picks.get("best_bet_2_market","")
+                    str(picks.get(
+                        "best_bet_2")).upper() != "PASS"
+                    and isinstance(conf2, int)
+                    and conf2 >= 57):
+                u2  = format_unit_label(conf2, picks)
+                bm2 = picks.get(
+                    "best_bet_2_market", "")
                 print(f"  BEST BET 2: "
                       f"{picks.get('best_bet_2','—')} "
                       f"({conf2}% — {u2}) [{bm2}]")
@@ -1353,7 +1564,8 @@ def run_batch(target_date=None):
             if picks.get("rule20_active"):
                 print("  ⚑ RULE 20 SHARP FADE ACTIVE")
             if picks.get("rule31_active"):
-                print("  ⚑ RULE 31 STAR ABSORPTION ACTIVE")
+                print(
+                    "  ⚑ RULE 31 STAR ABSORPTION ACTIVE")
 
             all_results.append({
                 "game_label": game_label,
@@ -1378,7 +1590,8 @@ def run_batch(target_date=None):
 
     # ── GENERATE MASTER SUMMARY ──
     print(f"\n{'='*60}")
-    print("All games analyzed. Generating master summary...")
+    print("All games analyzed. "
+          "Generating master summary...")
     master_pdf = generate_master_summary_pdf(
         all_results, target_date)
 
@@ -1389,18 +1602,202 @@ def run_batch(target_date=None):
     # ── SEND BATCH SUMMARY EMAIL ──
     print("\nSending batch summary email...")
     from emailer import send_batch_summary
-    send_batch_summary(all_results, target_date, master_pdf)
+    send_batch_summary(
+        all_results, target_date, master_pdf)
 
-    # ── POST TO X ──
-    from twitter_poster import post_picks_from_batch
-    posted_picks = post_picks_from_batch(
-        all_results, target_date)
+    # ── BUILD PICKS LIST FOR TRACKER ──
+    # Runs regardless of X posting status so the
+    # tracker always stays current
+    posted_picks = []
+
+    for result in all_results:
+        picks      = result.get("picks", {})
+        game_label = result.get(
+            "game_label", "Unknown")
+
+        # ── BEST BET 1 ──
+        conf1 = picks.get("best_bet_confidence", 0)
+        bb1   = picks.get("best_bet", "")
+
+        if (isinstance(conf1, int) and
+                conf1 >= MIN_CONFIDENCE_TO_FLAG and
+                bb1 and
+                str(bb1).upper() != "PASS" and
+                bb1 != "—"):
+
+            units1 = get_unit_size(conf1, picks)
+
+            if units1 >= 1.0:
+                sp_rec  = str(picks.get(
+                    "spread_recommendation",
+                    "")).upper()
+                tc_rec  = str(picks.get(
+                    "total_recommendation",
+                    "")).upper()
+                r32_rec = str(picks.get(
+                    "rule32_recommendation",
+                    "")).upper()
+
+                if ("UNDERDOG" in r32_rec or
+                        "COVER" in sp_rec):
+                    market1 = "SPREAD - UNDERDOG"
+                elif "BET" in sp_rec:
+                    market1 = "SPREAD"
+                elif "BET" in tc_rec:
+                    market1 = "TOTAL"
+                elif (isinstance(
+                    picks.get("spread_confidence"),
+                        int) and
+                        picks["spread_confidence"] >=
+                        picks.get(
+                            "total_confidence", 0)):
+                    market1 = "SPREAD"
+                else:
+                    market1 = "TOTAL"
+
+                posted_picks.append({
+                    "date":       target_date,
+                    "game":       game_label,
+                    "market":     market1,
+                    "pick":       bb1,
+                    "confidence": conf1,
+                    "units":      units1,
+                    "tier":       get_tier_label(
+                        conf1, picks),
+                    "tweet_id":   "",
+                    "result":     "PENDING",
+                    "rule20":     picks.get(
+                        "rule20_active", False),
+                    "rule31":     picks.get(
+                        "rule31_active", False),
+                    "rule32_gap": picks.get(
+                        "rule32_gap", 0),
+                })
+
+        # ── BEST BET 2 ──
+        conf2 = picks.get(
+            "best_bet_2_confidence", 0)
+        bb2   = picks.get("best_bet_2", "PASS")
+        bm2   = picks.get(
+            "best_bet_2_market", "TOTAL")
+
+        if (isinstance(conf2, int) and
+                conf2 >= MIN_CONFIDENCE_TO_FLAG and
+                bb2 and
+                str(bb2).upper() != "PASS" and
+                bb2 != "—"):
+
+            units2 = get_unit_size(conf2, picks)
+
+            if units2 >= 1.0:
+                posted_picks.append({
+                    "date":       target_date,
+                    "game":       game_label,
+                    "market":     bm2,
+                    "pick":       bb2,
+                    "confidence": conf2,
+                    "units":      units2,
+                    "tier":       get_tier_label(
+                        conf2, picks),
+                    "tweet_id":   "",
+                    "result":     "PENDING",
+                    "rule20":     picks.get(
+                        "rule20_active", False),
+                    "rule31":     picks.get(
+                        "rule31_active", False),
+                    "rule32_gap": picks.get(
+                        "rule32_gap", 0),
+                })
+
+    # ── POST TO X (uncomment when X Basic is active) ──
+    # from twitter_poster import post_picks_from_batch
+    # post_picks_from_batch(all_results, target_date)
 
     # ── UPDATE TRACKER ──
     if posted_picks:
         from tracker import add_posted_picks
         add_posted_picks(posted_picks)
+        print(f"\n  {len(posted_picks)} pick(s) "
+              f"added to tracker.")
+    else:
+        print("\n  No qualifying picks "
+              "to add to tracker.")
 
+    # ── TRACKER DIAGNOSTIC ──
+    print("\n  TRACKER DIAGNOSTIC:")
+    print("  " + "-"*50)
+    for result in all_results:
+        picks = result.get("picks", {})
+        game  = result.get("game_label", "Unknown")
+
+        raw_conf = picks.get(
+            "best_bet_confidence", 0)
+        try:
+            conf = int(raw_conf)
+        except (TypeError, ValueError):
+            conf = 0
+
+        bb1 = picks.get("best_bet", "—")
+
+        raw_conf2 = picks.get(
+            "best_bet_2_confidence", 0)
+        try:
+            conf2 = int(raw_conf2)
+        except (TypeError, ValueError):
+            conf2 = 0
+
+        bb2 = picks.get("best_bet_2", "PASS")
+
+        in_tracker = any(
+            p.get("game", "") == game
+            for p in posted_picks
+        )
+
+        status = "✓ TRACKED" if in_tracker \
+            else "✗ NOT TRACKED"
+
+        print(f"  {status}: {game}")
+        print(f"    BB1: {bb1} ({conf}%)")
+
+        if (isinstance(conf2, int) and
+                conf2 >= 57 and
+                str(bb2).upper() != "PASS"):
+            print(f"    BB2: {bb2} ({conf2}%)")
+
+        if not in_tracker:
+            if conf == 0:
+                reason = (
+                    f"confidence is 0 or unparseable"
+                    f" — raw value: {raw_conf}")
+            elif conf < MIN_CONFIDENCE_TO_FLAG:
+                reason = (
+                    f"confidence {conf}% below "
+                    f"{MIN_CONFIDENCE_TO_FLAG}% threshold")
+            elif (str(bb1).upper() == "PASS" or
+                      bb1 == "—" or not bb1):
+                reason = "best bet is PASS or empty"
+            elif get_unit_size(conf, picks) < 1.0:
+                reason = (
+                    f"unit size "
+                    f"{get_unit_size(conf, picks)} "
+                    f"below 1.0 minimum")
+            elif not picks:
+                reason = "picks dict is empty"
+            else:
+                reason = (
+                    "unknown — check picks dict "
+                    "for this game")
+            print(f"    Reason not tracked: {reason}")
+
+    tracked_count = len(posted_picks)
+    total_count   = len(all_results)
+    print(f"\n  Summary: {tracked_count} of "
+          f"{total_count} games tracked")
+    print("  " + "-"*50)
+
+    # ── AUTO PUSH TO GITHUB → RENDER UPDATES ──
+    print("\nPushing updated picks to GitHub...")
+    _git_push("batch run complete")
 
     # ── FINAL CONSOLE SUMMARY ──
     print(f"\n{'='*60}")
@@ -1412,8 +1809,10 @@ def run_batch(target_date=None):
     print(f"  Errors:         "
           f"{sum(1 for r in all_results if r.get('error'))}")
 
-    hc = [r for r in all_results if _is_high_confidence(r)]
-    rc = [r for r in all_results if _is_recommended(r)]
+    hc = [r for r in all_results
+          if _is_high_confidence(r)]
+    rc = [r for r in all_results
+          if _is_recommended(r)]
 
     print(f"\n  High confidence plays "
           f"({HIGH_CONFIDENCE_THRESHOLD}%+): {len(hc)}")
@@ -1430,9 +1829,9 @@ def run_batch(target_date=None):
         print(f"    ★★ {r['game_label']}")
         print(f"       BB1: {p.get('best_bet','—')} "
               f"({conf}% — {tier} — {units})")
-        bb2  = p.get("best_bet_2","PASS")
+        bb2  = p.get("best_bet_2", "PASS")
         bc2  = p.get("best_bet_2_confidence", 0)
-        bm2  = p.get("best_bet_2_market","")
+        bm2  = p.get("best_bet_2_market", "")
         if (str(bb2).upper() != "PASS" and
                 isinstance(bc2, int) and bc2 >= 57):
             u2 = format_unit_label(bc2, p)
@@ -1442,7 +1841,7 @@ def run_batch(target_date=None):
 
     print(f"\n  Recommended plays "
           f"({MIN_CONFIDENCE_TO_FLAG}-"
-          f"{HIGH_CONFIDENCE_THRESHOLD-1}%): {len(rc)}")
+          f"{HIGH_CONFIDENCE_THRESHOLD - 1}%): {len(rc)}")
     for r in sorted(
         rc,
         key=lambda x: x["picks"].get(
@@ -1465,5 +1864,5 @@ if __name__ == "__main__":
     # Option 1: Analyze today's games
     run_batch()
 
-    # Option 2: Analyze a specific date — uncomment and edit:
-    # run_batch("March 17, 2026")
+    # Option 2: Analyze a specific date:
+    # run_batch("March 18, 2026")

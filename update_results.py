@@ -6,6 +6,57 @@ from tracker import (
 )
 from twitter_poster import post_tweet
 
+def _git_push_results(message="results updated"):
+    """
+    Push latest results to GitHub so Render
+    automatically redeploys with fresh data.
+    """
+    import subprocess
+
+    try:
+        subprocess.run(
+            ["git", "add", "posted_picks.json"],
+            capture_output=True
+        )
+
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True
+        )
+
+        if not status.stdout.strip():
+            print("  No changes to push.")
+            return
+
+        subprocess.run(
+            ["git", "commit", "-m",
+             f"auto: {message}"],
+            capture_output=True
+        )
+
+        result = subprocess.run(
+            ["git", "push"],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0:
+            print("  ✓ Pushed to GitHub — "
+                  "Render will update in ~1 min")
+        else:
+            print(f"  ✗ Push failed: "
+                  f"{result.stderr[:100]}")
+            print("  Results saved locally — "
+                  "push manually with: "
+                  "git add . && git commit -m "
+                  "'update' && git push")
+
+    except Exception as e:
+        print(f"  ✗ Git push error: {e}")
+        print("  Results saved locally — "
+              "push manually if needed")
+
 
 def build_result_tweet(pick, result, stats):
     """
@@ -228,6 +279,11 @@ def update_interactively():
     print(f"  Net Units:      {net_sign}{net}u")
     print(f"  Pending:        {stats['pending']}")
     print(f"{'='*55}\n")
+
+# ── AUTO PUSH TO GITHUB → RENDER UPDATES ──
+if updated_count > 0:
+    print("\nPushing results to GitHub...")
+    _git_push_results()
 
 
 if __name__ == "__main__":

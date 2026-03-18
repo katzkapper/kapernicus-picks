@@ -553,7 +553,8 @@ IMPORTANT REMINDERS (v7)
 - RULE 31 — STAR ABSORPTION CEILING (v6): When a team's primary scorer is absent and one player absorbs 35%+ of the scoring load, you MUST model that player's ceiling output — NOT their season average — in the total projection. Use their 75th-percentile output from last 10 games. Apply +25% FTA adjustment. Widen total ceiling +15 to +20 pts. If Star Absorption Ceiling scenario produces a combined total within 10 pts of the line: TOTAL = PASS. Do NOT recommend Under unless base case is 10+ pts below the line. Rule 31 fires simultaneously with Rule 12. Root cause: Penn 88, Yale 84 OT. TJ Power scored 44 pts (avg 15.8) after Roberts was ruled out. The model used Power's season average as the anchor. That was the error.
 - RULE 32 — MARKET PRICE EFFICIENCY CHECK (v7): Run on EVERY game. Compute GAP = current spread minus model projected margin. If GAP >= 2 pts: apply -5% to favorite confidence and flag LINE EXCEEDS MODEL. If GAP >= 4 pts: PASS on favorite. Then run the bilateral underdog check. GAP 2-3 pts = ~52-57% baseline. GAP 4-6 pts = ~57-62%. GAP 6+ pts = ~62%+. Apply all standard rule modifiers. If adjusted underdog cover probability reaches 62%+: HIGH CONFIDENCE UNDERDOG COVER — 1.5 units. If 57-61%: UNDERDOG COVER — 1 unit. Below 57%: PASS both sides. Rule 32 does NOT override Rule 20.
 - CONFIDENCE AND UNIT SIZING: Below 57% = PASS (0 units). 57-61% = RECOMMENDED (1 unit). 62%+ = HIGH CONFIDENCE (1.5 units). Rule 20 active + 57%+ = HIGH CONFIDENCE (1 unit). Rule 32 gap 3+ + 57%+ = HIGH CONFIDENCE (1.5 units). Rule 20 AND Rule 32 both active = HIGH CONFIDENCE (2 units). Always state unit size with every pick.
-- DUAL BEST BETS: Issue a Best Bet for EVERY market that independently clears 57%. Do NOT limit to one pick. Spread and total are evaluated independently. Label clearly as BEST BET — SPREAD and BEST BET — TOTAL.
+- DUAL BEST BETS: Issue a Best Bet for EVERY market that independently clears 57%. Do NOT limit to one pick. Spread and total are evaluated independently. Label clearly as BEST BET — SPREAD and BEST BET — TOTAL. Each is tracked independently in the record.
+- BB1 and BB2 are evaluated at their OWN confidence level for tier placement. A BB2 at 60% is RECOMMENDED (1 unit), not High Confidence. A BB2 at 63% is HIGH CONFIDENCE (1.5 units). They do not inherit each other's tier.
 - Model the FLOOR scenario (Rule 9) for volatile scorers.
 - Apply Rule 25 ASYMMETRICALLY: neutralize fatigue if both teams played prior night.
 - Pull actual box scores, not just game summaries.
@@ -571,7 +572,6 @@ IMPORTANT REMINDERS (v7)
 - Run Rule 26 Consistency Gate before every final output.
 - Run Rule 27 Pre-Check BEFORE naming any Best Bet — not after.
 - The model has a structural favorite bias built into the 11-factor scoring system. Rule 32 exists specifically to correct this. Always run it. Always state the GAP. Always evaluate the underdog side affirmatively.
-
 
 """
 
