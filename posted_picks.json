@@ -50,7 +50,7 @@
     "units": 1.5,
     "tier": "HIGH CONFIDENCE",
     "tweet_id": "",
-    "result": "PENDING",
+    "result": "LOSS",
     "rule20": false,
     "rule31": false,
     "rule32_gap": 1.5
@@ -64,7 +64,7 @@
     "units": 1.5,
     "tier": "HIGH CONFIDENCE",
     "tweet_id": "",
-    "result": "PENDING",
+    "result": "WIN",
     "rule20": false,
     "rule31": false,
     "rule32_gap": 1.5
@@ -92,7 +92,7 @@
     "units": 1.5,
     "tier": "HIGH CONFIDENCE",
     "tweet_id": "",
-    "result": "PENDING",
+    "result": "LOSS",
     "rule20": false,
     "rule31": false,
     "rule32_gap": 9.5
