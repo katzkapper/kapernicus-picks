@@ -92,10 +92,13 @@ def calculate_stats(picks):
                 "losses": 0,
                 "pushes": 0
             }
-        result_key = p["result"].lower() + "s"
-        if result_key in tier_stats[tier]:
-            tier_stats[tier][result_key] += 1
-
+        r = p["result"].upper()
+        if r == "WIN":
+            tier_stats[tier]["wins"]   += 1
+        elif r == "LOSS":
+            tier_stats[tier]["losses"] += 1
+        elif r == "PUSH":
+            tier_stats[tier]["pushes"] += 1
     # By market
     market_stats = {}
     for p in settled:
@@ -106,10 +109,13 @@ def calculate_stats(picks):
                 "losses": 0,
                 "pushes": 0
             }
-        result_key = p["result"].lower() + "s"
-        if result_key in market_stats[mkt]:
-            market_stats[mkt][result_key] += 1
-
+        r = p["result"].upper()
+        if r == "WIN":
+            market_stats[mkt]["wins"]   += 1
+        elif r == "LOSS":
+            market_stats[mkt]["losses"] += 1
+        elif r == "PUSH":
+            market_stats[mkt]["pushes"] += 1
     # Rule flag performance
     r20_picks  = [p for p in settled
                   if p.get("rule20")]
