@@ -194,5 +194,33 @@
     "rule20": false,
     "rule31": false,
     "rule32_gap": 9.5
+  },
+  {
+    "date": "March 20, 2026",
+    "game": "LIU Sharks @ Arizona Wildcats",
+    "market": "SPREAD",
+    "pick": "Arizona -30.5 (63% confidence - HIGH CONFIDENCE - ",
+    "confidence": 63,
+    "units": 1.5,
+    "tier": "HIGH CONFIDENCE",
+    "tweet_id": "",
+    "result": "PENDING",
+    "rule20": false,
+    "rule31": false,
+    "rule32_gap": 1.5
+  },
+  {
+    "date": "March 20, 2026",
+    "game": "Wright St Raiders @ Virginia Cavaliers",
+    "market": "SPREAD",
+    "pick": "Virginia -17.5 \u2014 Structural advantages (2H shootin",
+    "confidence": 57,
+    "units": 1.0,
+    "tier": "RECOMMENDED",
+    "tweet_id": "",
+    "result": "PENDING",
+    "rule20": false,
+    "rule31": false,
+    "rule32_gap": -2.3
   }
 ]
