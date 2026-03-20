@@ -222,5 +222,61 @@
     "rule20": false,
     "rule31": false,
     "rule32_gap": -2.3
+  },
+  {
+    "date": "March 20, 2026",
+    "game": "Akron Zips @ Texas Tech Red Raiders",
+    "market": "SPREAD",
+    "pick": "Akron Zips +7.5 - Rule 32 market efficiency identi",
+    "confidence": 57,
+    "units": 1.0,
+    "tier": "RECOMMENDED",
+    "tweet_id": "",
+    "result": "PENDING",
+    "rule20": false,
+    "rule31": false,
+    "rule32_gap": 2.5
+  },
+  {
+    "date": "March 20, 2026",
+    "game": "Iowa Hawkeyes @ Clemson Tigers",
+    "market": "SPREAD",
+    "pick": "OVER 130.5 - Base case projects 140.2 (9.7 pts ove",
+    "confidence": 65,
+    "units": 1.5,
+    "tier": "HIGH CONFIDENCE",
+    "tweet_id": "",
+    "result": "PENDING",
+    "rule20": false,
+    "rule31": false,
+    "rule32_gap": 3.7
+  },
+  {
+    "date": "March 20, 2026",
+    "game": "Cal Baptist Lancers @ Kansas Jayhawks",
+    "market": "SPREAD",
+    "pick": "Under 139.5 - Tournament pace reduction and Kansas",
+    "confidence": 58,
+    "units": 1.0,
+    "tier": "RECOMMENDED",
+    "tweet_id": "",
+    "result": "PENDING",
+    "rule20": false,
+    "rule31": false,
+    "rule32_gap": -4.5
+  },
+  {
+    "date": "March 20, 2026",
+    "game": "Furman Paladins @ UConn Huskies",
+    "market": "SPREAD",
+    "pick": "UConn Huskies -20.5 (63% confidence \u2014 HIGH CONFIDE",
+    "confidence": 63,
+    "units": 1.5,
+    "tier": "HIGH CONFIDENCE",
+    "tweet_id": "",
+    "result": "PENDING",
+    "rule20": false,
+    "rule31": false,
+    "rule32_gap": 1.5
   }
 ]
