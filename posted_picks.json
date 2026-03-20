@@ -85,20 +85,6 @@
   },
   {
     "date": "March 19, 2026",
-    "game": "High Point @ Wisconsin",
-    "market": "SPREAD - UNDERDOG",
-    "pick": "UMBC +10.5 - Rule 32 Market Price Efficiency identifies 4.5 point GAP between model projection.",
-    "confidence": 62,
-    "units": 1.5,
-    "tier": "HIGH CONFIDENCE",
-    "tweet_id": "",
-    "result": "PENDING",
-    "rule20": false,
-    "rule31": false,
-    "rule32_gap": 4.5
-  },
-  {
-    "date": "March 19, 2026",
     "game": "Howard Bison @ Michigan Wolverines",
     "market": "TOTAL",
     "pick": "Over 151.5.",
