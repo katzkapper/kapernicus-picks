@@ -39,9 +39,10 @@ def update_result(game, date, result):
     picks   = load_picks()
     updated = 0
     for p in picks:
-        if (p.get("game", "").lower() == game.lower()
-                and p.get("date", "") == date
-                and p.get("result") == "PENDING"):
+        if (p.get("game", "").lower() ==
+                game.lower() and
+                p.get("date", "") == date and
+                p.get("result") == "PENDING"):
             p["result"] = result.upper()
             updated += 1
     save_picks(picks)
@@ -81,24 +82,35 @@ def calculate_stats(picks):
     )
     net_units = round(units_won - units_lost, 2)
 
+    # By tier
     tier_stats = {}
     for p in settled:
         tier = p.get("tier", "UNKNOWN")
         if tier not in tier_stats:
             tier_stats[tier] = {
-                "wins": 0, "losses": 0, "pushes": 0}
-        tier_stats[tier][
-            p["result"].lower() + "s"] += 1
+                "wins":   0,
+                "losses": 0,
+                "pushes": 0
+            }
+        result_key = p["result"].lower() + "s"
+        if result_key in tier_stats[tier]:
+            tier_stats[tier][result_key] += 1
 
+    # By market
     market_stats = {}
     for p in settled:
         mkt = p.get("market", "UNKNOWN")
         if mkt not in market_stats:
             market_stats[mkt] = {
-                "wins": 0, "losses": 0, "pushes": 0}
-        market_stats[mkt][
-            p["result"].lower() + "s"] += 1
+                "wins":   0,
+                "losses": 0,
+                "pushes": 0
+            }
+        result_key = p["result"].lower() + "s"
+        if result_key in market_stats[mkt]:
+            market_stats[mkt][result_key] += 1
 
+    # Rule flag performance
     r20_picks  = [p for p in settled
                   if p.get("rule20")]
     r31_picks  = [p for p in settled
@@ -224,8 +236,7 @@ def build_html(picks, stats):
                 style="padding:30px;
                        text-align:center;
                        color:#999;font-size:13px;">
-                No picks posted yet. Run the batch
-                analyzer to generate picks.
+                No picks posted yet.
             </td>
         </tr>"""
 
@@ -233,9 +244,10 @@ def build_html(picks, stats):
     tier_rows = ""
     for tier, ts in stats.get(
             "tier_stats", {}).items():
-        t_total  = ts["wins"] + ts["losses"]
+        t_total  = ts.get("wins", 0) + ts.get("losses", 0)
         t_winpct = (
-            round(ts["wins"] / t_total * 100, 1)
+            round(ts.get("wins", 0) /
+                  t_total * 100, 1)
             if t_total > 0 else 0
         )
         tier_rows += f"""
@@ -245,11 +257,11 @@ def build_html(picks, stats):
             <td style="padding:7px;text-align:center;
                        color:#1A7A3E;font-weight:bold;
                        font-size:12px;">
-                {ts['wins']}</td>
+                {ts.get('wins', 0)}</td>
             <td style="padding:7px;text-align:center;
                        color:#CC0000;font-weight:bold;
                        font-size:12px;">
-                {ts['losses']}</td>
+                {ts.get('losses', 0)}</td>
             <td style="padding:7px;text-align:center;
                        font-size:12px;">
                 {t_winpct}%</td>
@@ -267,9 +279,10 @@ def build_html(picks, stats):
     market_rows = ""
     for mkt, ms in stats.get(
             "market_stats", {}).items():
-        m_total  = ms["wins"] + ms["losses"]
+        m_total  = ms.get("wins", 0) + ms.get("losses", 0)
         m_winpct = (
-            round(ms["wins"] / m_total * 100, 1)
+            round(ms.get("wins", 0) /
+                  m_total * 100, 1)
             if m_total > 0 else 0
         )
         market_rows += f"""
@@ -279,11 +292,11 @@ def build_html(picks, stats):
             <td style="padding:7px;text-align:center;
                        color:#1A7A3E;font-weight:bold;
                        font-size:12px;">
-                {ms['wins']}</td>
+                {ms.get('wins', 0)}</td>
             <td style="padding:7px;text-align:center;
                        color:#CC0000;font-weight:bold;
                        font-size:12px;">
-                {ms['losses']}</td>
+                {ms.get('losses', 0)}</td>
             <td style="padding:7px;text-align:center;
                        font-size:12px;">
                 {m_winpct}%</td>
@@ -311,7 +324,8 @@ def build_html(picks, stats):
     <style>
         * {{ box-sizing: border-box; }}
         body {{
-            margin: 0; padding: 0;
+            margin: 0;
+            padding: 0;
             background: #F4F6F9;
             font-family: Arial, sans-serif;
         }}
@@ -604,7 +618,7 @@ def build_html(picks, stats):
     <!-- FOOTER -->
     <div style="text-align:center;font-size:11px;
                 color:#999;padding:20px 0 40px 0;">
-                Kapernicus Picks<br>
+        Kapernicus Picks — 32-Rule Model v7<br>
         For entertainment and informational purposes
         only. Gambling involves risk.<br>
         Problem Gambling Helpline: 1-800-GAMBLER.
@@ -627,7 +641,7 @@ def health():
     return "OK", 200
 
 
-def serve_tracker(port=5000):
+def serve_tracker(port=8080):
     print(f"\n{'='*50}")
     print(f"  KAPERNICUS PICKS — PUBLIC TRACKER")
     print(f"{'='*50}")
