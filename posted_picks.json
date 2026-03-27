@@ -278,5 +278,19 @@
     "rule20": false,
     "rule31": false,
     "rule32_gap": 1.5
+  },
+  {
+    "date": "March 26, 2026",
+    "game": "Illinois Fighting Illini @ Houston Cougars",
+    "market": "SPREAD - UNDERDOG",
+    "pick": "Illinois Fighting Illini +2.5",
+    "confidence": 63,
+    "units": 1.0,
+    "tier": "HIGH CONFIDENCE",
+    "tweet_id": "",
+    "result": "PENDING",
+    "rule20": true,
+    "rule31": false,
+    "rule32_gap": 2.0
   }
 ]
